@@ -1,4 +1,4 @@
-LIBIEC_HOME=/home/ied1/libiec61850
+LIBIEC_HOME=../libiec61850
 
 PROJECT_BINARY_NAME = rdso
 PROJECT_SOURCES = rdso.c

@@ -1,4 +1,4 @@
-LIBIEC_HOME=/home/ied2/libiec61850
+LIBIEC_HOME=../libiec61850
 
 PROJECT_BINARY_NAME = ipp
 PROJECT_SOURCES = ipp.c
