@@ -16,7 +16,7 @@ Simulating GOOSE communication between Intelligent Electronic Devices(IEDs) in r
 
 ### Diagram
 
-![Diagram](images\Use_Case_Diagram.jpg)
+![Diagram](https://raw.githubusercontent.com/camaison/final-year-project-smart-grid-security/main/images/Use_Case_Diagram.jpg)
 
 ### IED Communication and Functionality
 
