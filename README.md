@@ -1,5 +1,45 @@
 # FINAL YEAR PROJECT
 
+## Description
+
+Simulating GOOSE communication between Intelligent Electronic Devices(IEDs) in response to substation events in a Smart Distribution Grid using the IEC 61850 Protocol and Virtual Machines.
+
+## System Overview
+
+### Components
+
+- RDSO (Main Power Supply): The primary source of power for the grid.
+- DSO1 (Consumers): The entities consuming power from the grid.
+- IPP (Independent Power Producers): Alternative power sources activated when RDSO is offline.
+- IED 1 (RDSO IED): Communicates the status of the RDSO Circuit Breaker.
+- IED 2 (IPP IED): Communicates the status of the IPP Circuit Breaker.
+
+### Diagram
+
+![Diagram](images\Use_Case_Diagram.jpg)
+
+### IED Communication and Functionality
+
+#### IED 1 (RDSO IED):
+
+Monitors and communicates the status of the RDSO.
+
+##### Functionality
+
+- Toggles its status (circuit breaker open/closed) at regular intervals.
+- Publishes this status using GOOSE messaging.
+- Subscribes and Receives updates from IED2, reflecting the system's current state.
+
+#### IED 2 (IPP IED):
+
+Monitors and communicates the status of the IPP.
+
+##### Functionality
+
+- Subscribes and Receives GOOSE messages from IED1 indicating the status of the RDSO Circuit Breaker.
+- Updates its status based on RDSO's condition.
+- Publishes its status (circuit breaker open/closed) using GOOSE messaging.
+
 ## Setup Instructions
 
 After setting up both virtual machines running linux debian 11 and in the linux terminals of both machines:
