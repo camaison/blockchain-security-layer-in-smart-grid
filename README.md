@@ -1,12 +1,17 @@
-# FINAL YEAR PROJECT
+# Blockchain as a Security Layer in the Smart Grid
 
-## Description
+Smart grid self-healing applications may be faced with the challenges of emerging cyber-physical security threats. These can result in disruption to the applications' operations thereby affecting the power system reliability. Blockchain is one technology that has been deployed in several applications to offer security and bookkeeping. Blockchain can be deployed as a second-tier security mechanism to support time-critical self-healing operations in smart distribution grids ([Reference Paper](https://drive.google.com/file/d/1-Sww2ZEgU-wcpWiuROuD4X6lCf96uzVd/view?usp=sharing)). The main objective of this task is to design and implement a testbed to realize this architecture.  The testbed should mimic a smart grid self-healing application that utilizes blockchain to achieve the second-tier security layer. 
 
-Simulating GOOSE communication between Intelligent Electronic Devices(IEDs) in response to substation events in a Smart Distribution Grid using the IEC 61850 Protocol and Virtual Machines.
+## Activities
+
+1. Review literature on blockchain, blockchain use in the smart grid, and self-healing applications.
+
+2. Using a proposed model, design and implement a testbed to study the behavior of blockchain deployed on a self-healing smart grid network.
+
+3. Collect performance data and analyze it.
+   
 
 ## System Overview
-
-### Components
 
 - RDSO (Main Power Supply): The primary source of power for the grid.
 - DSO1 (Consumers): The entities consuming power from the grid.
@@ -46,13 +51,13 @@ After setting up both virtual machines running linux debian 11 and in the linux 
 
 ### 1. Clone this repository
 
-Run `git clone https://github.com/camaison/final-year-project-smart-grid-security.git`
+Run `git clone https://github.com/camaison/blockchain-security-layer-in-smart-grid.git`
 
 NB: Decide which Virtual Machine will run IPP_IED and which will run RDSO_IED and stick to that.
 
 ### 2. Change directory to the project folder
 
-Run `cd final-year-project-smart-grid-security`
+Run `cd blockchain-security-layer-in-smart-grid`
 
 ### 3. Clone libiec61850 library
 
