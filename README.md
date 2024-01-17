@@ -66,12 +66,19 @@ Run `git clone https://github.com/mz-automation/libiec61850.git`
 ## Usage Instructions
 
 In the directory containing the script file for each IED (IPP_IED or RDSO_IED) open the terminal making sure it points to that path. Then:
+### 1. Update Packages
 
-### 1. Compile the script
+Run `sudo apt update` to update packages.
+
+### 2. Install make 
+
+Run `sudo apt install make` to install make.
+
+### 3. Compile the script
 
 Run `make` to compile the script.
 
-### 2. Run the script
+### 4. Run the script
 
 Run `sudo ./{name of compiled script}` to run the code.
 
