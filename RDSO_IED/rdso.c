@@ -121,6 +121,7 @@ gooseCommParameters.appId = 1000;
         }
         // Publish the latest status
         publish(publisher);
+        printf("Communicating!!!\n");
 
         Thread_sleep(1000); // Adjust the frequency of publishing as needed
     }
