@@ -87,6 +87,7 @@ int main(int argc, char **argv)
     }
     signal(SIGINT, sigint_handler);
     GooseReceiver receiver = GooseReceiver_create();
+    uint8_t dstMac[6] = {0x01, 0x0c, 0xcd, 0x01, 0x00, 0x01};
     CommParameters gooseCommParameters = {0};
     gooseCommParameters.appId = 1000;
     memcpy(gooseCommParameters.dstAddress, dstMac, 6);
@@ -97,7 +98,6 @@ int main(int argc, char **argv)
     // Subscriber setup
     GooseReceiver_setInterfaceId(receiver, "ens33");
     GooseSubscriber subscriber = GooseSubscriber_create("simpleIOGenericIO/LLN0$GO$gcbAnalogValues", NULL);
-    uint8_t dstMac[6] = {0x01, 0x0c, 0xcd, 0x01, 0x00, 0x01};
     GooseSubscriber_setDstMac(subscriber, dstMac);
     GooseSubscriber_setAppId(subscriber, 1000);
     GooseSubscriber_setListener(subscriber, gooseListener, NULL);
