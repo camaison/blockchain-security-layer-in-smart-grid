@@ -59,6 +59,9 @@ static void gooseListener(GooseSubscriber subscriber, void *parameter)
 
 int main(int argc, char **argv)
 {
+    while(1 != 0){
+        printf("Hello World!\n");
+    }
     signal(SIGINT, sigint_handler);
 
     char *interface = (argc > 1) ? argv[1] : "ens33";
