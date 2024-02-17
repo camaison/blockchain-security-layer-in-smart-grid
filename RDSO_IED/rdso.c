@@ -64,12 +64,8 @@ int main(int argc, char **argv)
     char *interface = (argc > 1) ? argv[1] : "ens33";
     printf("Using interface %s\n", interface);
 
-    int toggleCounter = 0;
-    while (running)
-    {
-    // Publisher setup
-    CommParameters gooseCommParameters = {0};
-    gooseCommParameters.appId = 1000;
+        CommParameters gooseCommParameters = {0};
+gooseCommParameters.appId = 1000;
     gooseCommParameters.dstAddress[0] = 0x01;
     gooseCommParameters.dstAddress[1] = 0x0c;
     gooseCommParameters.dstAddress[2] = 0xcd;
@@ -77,13 +73,19 @@ int main(int argc, char **argv)
     gooseCommParameters.dstAddress[4] = 0x00;
     gooseCommParameters.dstAddress[5] = 0x01;
     GoosePublisher publisher = GoosePublisher_create(&gooseCommParameters, interface);
+
+        GooseReceiver receiver = GooseReceiver_create();
+
+    int toggleCounter = 0;
+    while (running)
+    {
+    // Publisher setup
     GoosePublisher_setGoCbRef(publisher, "simpleIOGenericIO/LLN0$GO$gcbAnalogValues");
     GoosePublisher_setConfRev(publisher, 1);
     GoosePublisher_setDataSetRef(publisher, "simpleIOGenericIO/LLN0$AnalogValues");
     GoosePublisher_setTimeAllowedToLive(publisher, 500);
 
     // Subscriber setup
-    GooseReceiver receiver = GooseReceiver_create();
     GooseReceiver_setInterfaceId(receiver, interface);
     GooseSubscriber subscriber = GooseSubscriber_create("simpleIOGenericIO/LLN0$GO$gcbAnalogValues", NULL);
     uint8_t dstMac[6] = {0x01, 0x0c, 0xcd, 0x01, 0x00, 0x01};
