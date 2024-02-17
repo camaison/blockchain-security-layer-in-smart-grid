@@ -64,6 +64,9 @@ int main(int argc, char **argv)
     char *interface = (argc > 1) ? argv[1] : "ens33";
     printf("Using interface %s\n", interface);
 
+    int toggleCounter = 0;
+    while (running)
+    {
     // Publisher setup
     CommParameters gooseCommParameters = {0};
     gooseCommParameters.appId = 1000;
@@ -91,9 +94,7 @@ int main(int argc, char **argv)
     GooseReceiver_start(receiver);
 
     // Main loop
-    int toggleCounter = 0;
-    while (running)
-    {
+    
         if (GooseReceiver_isRunning(receiver))
         {
             Thread_sleep(100); // Adjust this sleep time as needed
@@ -107,11 +108,12 @@ int main(int argc, char **argv)
             if (old_status != rdso_status)
             {
                 stNum++;
-                sqNum = 0; // Reset sqNum when stNum changes
             }
             toggleCounter = 0;
         }
-
+        else{
+            toggleCounter++;
+        }
         // Publish the latest status
         publish(publisher);
 
