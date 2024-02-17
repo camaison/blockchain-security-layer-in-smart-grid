@@ -83,7 +83,9 @@ void publish(GoosePublisher publisher)
 int main(int argc, char **argv)
 {
     signal(SIGINT, sigint_handler);
-
+    // Main loop
+    while (running)
+    {
     // Subscriber setup
     GooseReceiver receiver = GooseReceiver_create();
     GooseReceiver_setInterfaceId(receiver, "ens33");
@@ -105,10 +107,7 @@ int main(int argc, char **argv)
     GoosePublisher_setDataSetRef(publisher, "simpleIOGenericIO/LLN0$AnalogValues");
     GoosePublisher_setTimeAllowedToLive(publisher, 500);
 
-    int iterations = 0;
-    // Main loop
-    while (running)
-    {
+   
         if (GooseReceiver_isRunning(receiver))
         {
             Thread_sleep(100); // Adjust this sleep time as needed
@@ -117,12 +116,7 @@ int main(int argc, char **argv)
         // Publish the latest status
         publish(publisher);
 
-        Thread_sleep(1000); // Adjust the frequency of publishing as needed
-        iterations++;
-        if (iterations == 11)
-        {
-            break;
-        }
+        Thread_sleep(1000); // Adjust the frequency of publishing as needed       
     }
 
     // Clean up
