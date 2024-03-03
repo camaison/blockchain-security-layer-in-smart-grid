@@ -59,77 +59,70 @@ static void gooseListener(GooseSubscriber subscriber, void *parameter)
 
 int main(int argc, char **argv)
 {
-    while(1 != 0){
-        printf("Hello World!\n");
-    }
+
     signal(SIGINT, sigint_handler);
 
     char *interface = (argc > 1) ? argv[1] : "ens33";
     printf("Using interface %s\n", interface);
-
-        CommParameters gooseCommParameters = {0};
-gooseCommParameters.appId = 1000;
-    gooseCommParameters.dstAddress[0] = 0x01;
-    gooseCommParameters.dstAddress[1] = 0x0c;
-    gooseCommParameters.dstAddress[2] = 0xcd;
-    gooseCommParameters.dstAddress[3] = 0x01;
-    gooseCommParameters.dstAddress[4] = 0x00;
-    gooseCommParameters.dstAddress[5] = 0x01;
-    GoosePublisher publisher = GoosePublisher_create(&gooseCommParameters, interface);
-
-        GooseReceiver receiver = GooseReceiver_create();
-
-    int toggleCounter = 0;
-    while (running)
-    {
-    // Publisher setup
-    GoosePublisher_setGoCbRef(publisher, "simpleIOGenericIO/LLN0$GO$gcbAnalogValues");
-    GoosePublisher_setConfRev(publisher, 1);
-    GoosePublisher_setDataSetRef(publisher, "simpleIOGenericIO/LLN0$AnalogValues");
-    GoosePublisher_setTimeAllowedToLive(publisher, 500);
-
-    // Subscriber setup
-    GooseReceiver_setInterfaceId(receiver, interface);
-    GooseSubscriber subscriber = GooseSubscriber_create("simpleIOGenericIO/LLN0$GO$gcbAnalogValues", NULL);
-    uint8_t dstMac[6] = {0x01, 0x0c, 0xcd, 0x01, 0x00, 0x01};
-    GooseSubscriber_setDstMac(subscriber, dstMac);
-    GooseSubscriber_setAppId(subscriber, 1000);
-    GooseSubscriber_setListener(subscriber, gooseListener, NULL);
-    GooseReceiver_addSubscriber(receiver, subscriber);
-    GooseReceiver_start(receiver);
-
     // Main loop
-    
+    int toggleCounter = 0;
+    int count = 0;
+
+    while (running && count < 15)
+    {
+        // Publisher setup
+        CommParameters gooseCommParameters = {0};
+        gooseCommParameters.appId = 1000;
+        gooseCommParameters.dstAddress[0] = 0x01;
+        gooseCommParameters.dstAddress[1] = 0x0c;
+        gooseCommParameters.dstAddress[2] = 0xcd;
+        gooseCommParameters.dstAddress[3] = 0x01;
+        gooseCommParameters.dstAddress[4] = 0x00;
+        gooseCommParameters.dstAddress[5] = 0x01;
+        GoosePublisher publisher = GoosePublisher_create(&gooseCommParameters, interface);
+        GoosePublisher_setGoCbRef(publisher, "simpleIOGenericIO/LLN0$GO$gcbAnalogValues");
+        GoosePublisher_setConfRev(publisher, 1);
+        GoosePublisher_setDataSetRef(publisher, "simpleIOGenericIO/LLN0$AnalogValues");
+        GoosePublisher_setTimeAllowedToLive(publisher, 500);
+
+        // Subscriber setup
+        GooseReceiver receiver = GooseReceiver_create();
+        GooseReceiver_setInterfaceId(receiver, interface);
+        GooseSubscriber subscriber = GooseSubscriber_create("simpleIOGenericIO/LLN0$GO$gcbAnalogValues", NULL);
+        uint8_t dstMac[6] = {0x01, 0x0c, 0xcd, 0x01, 0x00, 0x01};
+        GooseSubscriber_setDstMac(subscriber, dstMac);
+        GooseSubscriber_setAppId(subscriber, 1000);
+        GooseSubscriber_setListener(subscriber, gooseListener, NULL);
+        GooseReceiver_addSubscriber(receiver, subscriber);
+        GooseReceiver_start(receiver);
+
         if (GooseReceiver_isRunning(receiver))
         {
             Thread_sleep(100); // Adjust this sleep time as needed
         }
 
-        // Toggle the rdso_status every 10 iterations (adjust the frequency as needed)
-        if (toggleCounter >= 5)
+        // Toggle the rdso_status every 10 iterations
+        if (toggleCounter++ % 10 == 0)
         {
             int old_status = rdso_status;
             rdso_status = (rdso_status == 1) ? 0 : 1;
             if (old_status != rdso_status)
             {
                 stNum++;
+                sqNum = 0; // Reset sqNum when stNum changes
             }
             toggleCounter = 0;
         }
-        else{
-            toggleCounter++;
-        }
+
         // Publish the latest status
         publish(publisher);
-        printf("Communicating!!!\n");
-
+        count++;
         Thread_sleep(1000); // Adjust the frequency of publishing as needed
+
+        // Clean up
+        GoosePublisher_destroy(publisher);
+        GooseReceiver_stop(receiver);
+        GooseReceiver_destroy(receiver);
     }
-
-    // Clean up
-    GoosePublisher_destroy(publisher);
-    GooseReceiver_stop(receiver);
-    GooseReceiver_destroy(receiver);
-
     return 0;
 }
