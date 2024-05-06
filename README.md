@@ -48,18 +48,31 @@ Monitors and communicates the status of the IPP.
 ## Setup Instructions
 
 After setting up both virtual machines running linux debian 11 and in the linux terminals of both machines:
+### 1. Install the Pre-requisite Hyperledger Fabric Software and Fabric Samples
+``` 
+https://hyperledger-fabric.readthedocs.io/en/release-2.5/prereqs.html 
+https://hyperledger-fabric.readthedocs.io/en/release-2.5/install.html
+```
 
-### 1. Clone this repository
+### 2. Clone this repository
+In the same directory as the fabric samples, clone this repository. 
 
 Run `git clone https://github.com/camaison/blockchain-security-layer-in-smart-grid.git`
 
 NB: Decide which Virtual Machine will run IPP_IED and which will run RDSO_IED and stick to that.
 
-### 2. Change directory to the project folder
+It should look like this:
+```
+/fabric-samples
+/blockchain-security-layer-in-smart-grid
+install-fabric.sh
+```
 
-Run `cd blockchain-security-layer-in-smart-grid`
+### 3. Change directory to the project folder
 
-### 3. Clone libiec61850 library
+Run `cd blockchain-security-layer-in-smart-grid/GOOSE_Client`
+
+### 4. Clone libiec61850 library
 
 Run `git clone https://github.com/mz-automation/libiec61850.git`
 
