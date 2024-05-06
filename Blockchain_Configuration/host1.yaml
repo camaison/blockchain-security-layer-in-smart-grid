@@ -7,7 +7,7 @@ version: '2'
 
 volumes:
   orderer.example.com:
-  #orderer5.example.com:
+  orderer5.example.com:
   peer0.org1.example.com:
 
 networks:
@@ -25,22 +25,22 @@ services:
     networks:
       - byfn
 
-  # orderer5.example.com:
-  #   extends:
-  #     file: base/peer-base.yaml
-  #     service: orderer-base
-  #   environment:
-  #     - ORDERER_GENERAL_LISTENPORT=11050
-  #   container_name: orderer5.example.com
-  #   networks:
-  #   - byfn
-  #   volumes:
-  #       - ./channel-artifacts/genesis.block:/var/hyperledger/orderer/orderer.genesis.block
-  #       - ./crypto-config/ordererOrganizations/example.com/orderers/orderer5.example.com/msp:/var/hyperledger/orderer/msp
-  #       - ./crypto-config/ordererOrganizations/example.com/orderers/orderer5.example.com/tls/:/var/hyperledger/orderer/tls
-  #       - orderer5.example.com:/var/hyperledger/production/orderer
-  #   ports:
-  #   - 11050:11050
+  orderer5.example.com:
+    extends:
+      file: base/peer-base.yaml
+      service: orderer-base
+    environment:
+      - ORDERER_GENERAL_LISTENPORT=11050
+    container_name: orderer5.example.com
+    networks:
+    - byfn
+    volumes:
+        - ./channel-artifacts/genesis.block:/var/hyperledger/orderer/orderer.genesis.block
+        - ./crypto-config/ordererOrganizations/example.com/orderers/orderer5.example.com/msp:/var/hyperledger/orderer/msp
+        - ./crypto-config/ordererOrganizations/example.com/orderers/orderer5.example.com/tls/:/var/hyperledger/orderer/tls
+        - orderer5.example.com:/var/hyperledger/production/orderer
+    ports:
+    - 11050:11050
 
   peer0.org1.example.com:
     container_name: peer0.org1.example.com
@@ -73,7 +73,7 @@ services:
     command: /bin/bash
     volumes:
         - ./../../fabric-samples/asset-transfer-basic/chaincode-go:/opt/gopath/src/github.com/hyperledger/fabric-samples/asset-transfer-basic/chaincode-go
-        - ./goose-validation-chaincode:/opt/gopath/src/github.com/hyperledger/goose-validation-chaincode
+        - ./chaincode-goose-validation:/opt/gopath/src/github.com/hyperledger/chaincode-goose-validation
         - /var/run/:/host/var/run/
         - ./../../fabric-samples/chaincode/:/opt/gopath/src/github.com/chaincode
         - ./crypto-config:/opt/gopath/src/github.com/hyperledger/fabric/peer/crypto/
