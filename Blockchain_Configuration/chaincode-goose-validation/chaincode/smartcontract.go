@@ -32,28 +32,32 @@ type Response struct {
 
 // Init function to initialize the ledger with sample data
 func (s *SmartContract) Init(ctx contractapi.TransactionContextInterface) error {
+    txTimestamp, err := ctx.GetStub().GetTxTimestamp()
+    if err != nil {
+        return fmt.Errorf("failed to get transaction timestamp: %v", err)
+    }
+    timestamp := time.Unix(txTimestamp.Seconds, int64(txTimestamp.Nanos)).String()
+
     messages := []Message{
-        {PartyID: "party1", Content: "Initial message from party1", Timestamp: time.Now().String(), Type: "Standard"},
-        {PartyID: "party2", Content: "Initial message from party2", Timestamp: time.Now().String(), Type: "Standard"},
+        {PartyID: "party1", Content: "Initial message from party1", Timestamp: timestamp, Type: "Standard"},
+        {PartyID: "party2", Content: "Initial message from party2", Timestamp: timestamp, Type: "Standard"},
     }
 
     responses := []Response{
-        {PartyID: "party1", ReceivedContent: "Initial message from party1", ResponseContent: "Initial response from party2", Timestamp: time.Now().String(), Status: "Valid"},
-        {PartyID: "party2", ReceivedContent: "Initial message from party2", ResponseContent: "Initial response from party1", Timestamp: time.Now().String(), Status: "Valid"},
+        {PartyID: "party1", ReceivedContent: "Initial message from party1", ResponseContent: "Initial response from party2", Timestamp: timestamp, Status: "Valid"},
+        {PartyID: "party2", ReceivedContent: "Initial message from party2", ResponseContent: "Initial response from party1", Timestamp: timestamp, Status: "Valid"},
     }
 
     for i, message := range messages {
         messageJSON, _ := json.Marshal(message)
-        err := ctx.GetStub().PutState("Message"+fmt.Sprint(i), messageJSON)
-        if err != nil {
+        if err := ctx.GetStub().PutState("Message"+fmt.Sprint(i), messageJSON); err != nil {
             return fmt.Errorf("failed to put to world state. %v", err)
         }
     }
 
     for i, response := range responses {
         responseJSON, _ := json.Marshal(response)
-        err := ctx.GetStub().PutState("Response"+fmt.Sprint(i), responseJSON)
-        if err != nil {
+        if err := ctx.GetStub().PutState("Response"+fmt.Sprint(i), responseJSON); err != nil {
             return fmt.Errorf("failed to put to world state. %v", err)
         }
     }
@@ -63,15 +67,22 @@ func (s *SmartContract) Init(ctx contractapi.TransactionContextInterface) error 
 
 // UpdateMessage adds a new message to the ledger
 func (s *SmartContract) UpdateMessage(ctx contractapi.TransactionContextInterface, partyID string, messageContent string, messageType string) error {
+    txTimestamp, err := ctx.GetStub().GetTxTimestamp()
+    if err != nil {
+        return fmt.Errorf("failed to get transaction timestamp: %v", err)
+    }
+    timestamp := time.Unix(txTimestamp.Seconds, int64(txTimestamp.Nanos)).String()
+
     message := Message{
         PartyID:    partyID,
         Content:    messageContent,
-        Timestamp:  time.Now().String(),
+        Timestamp:  timestamp,
         Type:       messageType,
     }
     messageJSON, _ := json.Marshal(message)
     return ctx.GetStub().PutState(partyID + "_updateMessage", messageJSON)
 }
+
 
 // RespondToMessage handles responses to messages
 func (s *SmartContract) RespondToMessage(ctx contractapi.TransactionContextInterface, receivedMessages map[string]string) (string, error) {
