@@ -46,7 +46,7 @@ func messageHandler(w http.ResponseWriter, r *http.Request) {
 		"published":  msg.Published,
 		"subscribed": msg.Subscribed,
 	}
-	// Enqueue the message
+	// Enqueue the messagez
 	enqueueMessage(messageMap)
 	// Print the queue in the terminal
 	showMessageQueue()

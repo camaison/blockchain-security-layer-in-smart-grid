@@ -1,223 +1,273 @@
 package chaincode
 
 import (
-    "encoding/json"
+	"encoding/json"
 	"fmt"
-    "time"
+	"time"
 
-    "github.com/hyperledger/fabric-contract-api-go/contractapi"
+	"github.com/hyperledger/fabric-contract-api-go/contractapi"
 )
 
-// SmartContract provides functions for controlling the message exchange
+// SmartContract provides functions for managing message and response records
 type SmartContract struct {
-    contractapi.Contract
+	contractapi.Contract
 }
+
+// MessageType represents the type of a Message
+type MessageType string
+
+// StatusType represents the validation status
+type StatusType string
+
+const (
+	// Message types
+	Standard   MessageType = "Standard"
+	Corrective MessageType = "Corrective"
+
+	// Status types
+	Valid   StatusType = "Valid"
+	Invalid StatusType = "Invalid"
+
+	// Message IDs
+	RDSO_PubMessage string = "RDSO_PubMessage"
+	IPP_PubMessage  string = "IPP_PubMessage"
+
+	// Response IDs
+	RDSO_ValidationMessage string = "RDSO_ValidationMessage"
+	IPP_ValidationMessage  string = "IPP_ValidationMessage"
+)
 
 // Message represents the structure for a message on the ledger
 type Message struct {
-    PartyID   string `json:"partyID"`
-    Content   string `json:"content"`
-    Timestamp string `json:"timestamp"`
-    Type      string `json:"type"` // "Standard" or "Corrective"
+	ID        string      `json:"ID"`
+	Message   interface{} `json:"Message"`
+	Timestamp string      `json:"Timestamp"`
+	Type      MessageType `json:"Type"`
 }
 
-// Response captures the response and validation status
+// Response represents the structure for a response on the ledger
 type Response struct {
-    PartyID   		 string `json:"partyID"`
-	ReceivedContent  string `json:"receivedContent"`
-    ResponseContent  string `json:"responseContent"`
-    Timestamp        string `json:"timestamp"`
-    Status           string `json:"status"`
+	ID         string      `json:"ID"`
+	Subscribed interface{} `json:"Subscribed"`
+	Published  interface{} `json:"Published"`
+	Timestamp  string      `json:"Timestamp"`
+	Status     StatusType  `json:"Status"`
 }
 
-// Init function to initialize the ledger with sample data
-func (s *SmartContract) Init(ctx contractapi.TransactionContextInterface) error {
-    txTimestamp, err := ctx.GetStub().GetTxTimestamp()
-    if err != nil {
-        return fmt.Errorf("failed to get transaction timestamp: %v", err)
-    }
-    timestamp := time.Unix(txTimestamp.Seconds, int64(txTimestamp.Nanos)).String()
+// InitLedger initializes the ledger with sample messages and responses
+func (s *SmartContract) InitLedger(ctx contractapi.TransactionContextInterface) error {
+	currentTimestamp := getCurrentTimestamp(ctx)
+	messages := []Message{
+		{ID: RDSO_PubMessage, Message: map[string]interface{}{"t": currentTimestamp, "stNum": 0, "allData": "TRUE"}, Type: Standard},
+		{ID: IPP_PubMessage, Message: map[string]interface{}{"t": currentTimestamp, "stNum": 0, "allData": "FALSE"}, Type: Standard},
+	}
 
-    messages := []Message{
-        {PartyID: "party1", Content: "Initial message from party1", Timestamp: timestamp, Type: "Standard"},
-        {PartyID: "party2", Content: "Initial message from party2", Timestamp: timestamp, Type: "Standard"},
-    }
+	responses := []Response{
+		{ID: RDSO_ValidationMessage, Subscribed: map[string]interface{}{}, Published: map[string]interface{}{}, Status: Valid},
+		{ID: IPP_ValidationMessage, Subscribed: map[string]interface{}{}, Published: map[string]interface{}{}, Status: Valid},
+	}
 
-    responses := []Response{
-        {PartyID: "party1", ReceivedContent: "Initial message from party1", ResponseContent: "Initial response from party2", Timestamp: timestamp, Status: "Valid"},
-        {PartyID: "party2", ReceivedContent: "Initial message from party2", ResponseContent: "Initial response from party1", Timestamp: timestamp, Status: "Valid"},
-    }
 
-    for i, message := range messages {
-        messageJSON, _ := json.Marshal(message)
-        if err := ctx.GetStub().PutState("Message"+fmt.Sprint(i), messageJSON); err != nil {
-            return fmt.Errorf("failed to put to world state. %v", err)
-        }
-    }
+	for _, msg := range messages {
+		msg.Timestamp = currentTimestamp
+		if err := putState(ctx, msg.ID, msg); err != nil {
+			return fmt.Errorf("failed to initialize message: %v", err)
+		}
+	}
 
-    for i, response := range responses {
-        responseJSON, _ := json.Marshal(response)
-        if err := ctx.GetStub().PutState("Response"+fmt.Sprint(i), responseJSON); err != nil {
-            return fmt.Errorf("failed to put to world state. %v", err)
-        }
-    }
+	for _, resp := range responses {
+		resp.Timestamp = currentTimestamp
+		if err := putState(ctx, resp.ID, resp); err != nil {
+			return fmt.Errorf("failed to initialize response: %v", err)
+		}
+	}
 
-    return nil
+	return nil
 }
 
-// UpdateMessage adds a new message to the ledger
-func (s *SmartContract) UpdateMessage(ctx contractapi.TransactionContextInterface, partyID string, messageContent string, messageType string) error {
-    txTimestamp, err := ctx.GetStub().GetTxTimestamp()
-    if err != nil {
-        return fmt.Errorf("failed to get transaction timestamp: %v", err)
-    }
-    timestamp := time.Unix(txTimestamp.Seconds, int64(txTimestamp.Nanos)).String()
-
-    message := Message{
-        PartyID:    partyID,
-        Content:    messageContent,
-        Timestamp:  timestamp,
-        Type:       messageType,
-    }
-    messageJSON, _ := json.Marshal(message)
-    return ctx.GetStub().PutState(partyID + "_updateMessage", messageJSON)
+// getCurrentTimestamp returns the current transaction timestamp as a string
+func getCurrentTimestamp(ctx contractapi.TransactionContextInterface) string {
+	txTimestamp, _ := ctx.GetStub().GetTxTimestamp()
+	return time.Unix(txTimestamp.Seconds, int64(txTimestamp.Nanos)).Format(time.RFC3339)
 }
 
-
-// RespondToMessage handles responses to messages
-func (s *SmartContract) RespondToMessage(ctx contractapi.TransactionContextInterface, receivedMessages map[string]string) (string, error) {
-    receivedContent := receivedMessages["receivedContent"]
-    responseContent := receivedMessages["responseContent"]
-    senderPartyID := receivedMessages["senderPartyID"]
-    responderPartyID := receivedMessages["responderPartyID"]
-
-    s.UpdateMessage(ctx, responderPartyID+"_updateMessage", responseContent, "Standard")
-    validationStatus, err := s.ValidateMessage(ctx, senderPartyID+"_updateMessage", receivedContent)
-    if err != nil {
-        return "", err
-    }
-    s.LogResponse(ctx, responderPartyID+"_responseMessage", receivedContent, responseContent, validationStatus)
-    return validationStatus, nil
+// putState writes a value to the ledger after marshaling it to JSON
+func putState(ctx contractapi.TransactionContextInterface, key string, value interface{}) error {
+	data, err := json.Marshal(value)
+	if err != nil {
+		return err
+	}
+	return ctx.GetStub().PutState(key, data)
 }
 
-// ValidateMessage checks if a message content matches the expected content
-func (s *SmartContract) ValidateMessage(ctx contractapi.TransactionContextInterface, partyID string, receivedContent string) (string, error) {
-    messageJSON, err := ctx.GetStub().GetState(partyID)
-    if err != nil {
-        return "", err
-    }
+// UpdateMessage updates or adds a message in the ledger
+func (s *SmartContract) UpdateMessage(ctx contractapi.TransactionContextInterface, id string, messageContent interface{}, messageType MessageType) error {
+	if id != RDSO_PubMessage && id != IPP_PubMessage {
+		return fmt.Errorf("invalid message ID: %s", id)
+	}
 
-    var message Message
-    json.Unmarshal(messageJSON, &message)
-    if message.Content == receivedContent {
-        return "Valid", nil
-    } else {
-        return "Invalid", nil
-    }
+	// Retrieve the existing message if it exists
+	var message Message
+	exists, err := s.ReadData(ctx, id, &message)
+	if err != nil {
+		return fmt.Errorf("failed to read existing message: %v", err)
+	}
+
+	if !exists {
+		message.ID = id
+		message.Type = Standard // Default type
+	}
+
+	message.Message = messageContent
+	message.Timestamp = getCurrentTimestamp(ctx)
+	message.Type = messageType
+
+	return putState(ctx, id, message)
 }
 
-// LogResponse logs the response and the validation result
-func (s *SmartContract) LogResponse(ctx contractapi.TransactionContextInterface, responseID string, receivedContent string, responseContent string, status string) error {
-    response := Response{
-        ReceivedContent: receivedContent,
-        ResponseContent: responseContent,
-        Timestamp:       time.Now().String(),
-        Status:          status,
-    }
-    responseJSON, _ := json.Marshal(response)
-    return ctx.GetStub().PutState(responseID, responseJSON)
+// RespondToMessage updates or creates a response in the ledger
+func (s *SmartContract) RespondToMessage(ctx contractapi.TransactionContextInterface, id string, subscribedContent, publishedContent interface{}) (string, error) {
+	if id != RDSO_ValidationMessage && id != IPP_ValidationMessage {
+		return "", fmt.Errorf("invalid response ID: %s", id)
+	}
+
+    // Update the corresponding message first with the publishedContent
+	messageIDToUpdate := RDSO_PubMessage
+	if id == IPP_ValidationMessage {
+		messageIDToUpdate = IPP_PubMessage
+	}
+
+    if err := s.UpdateMessage(ctx, messageIDToUpdate, publishedContent, Standard); err != nil {
+		return "", fmt.Errorf("failed to update message: %v", err)
+	}
+
+	var response Response
+	exists, err := s.ReadData(ctx, id, &response)
+	if err != nil {
+		return "", fmt.Errorf("failed to read existing response: %v", err)
+	}
+
+	if !exists {
+		response.ID = id
+		response.Status = Valid // Default status
+	}
+
+	// Update the response content, timestamp, and status
+	response.Subscribed = subscribedContent
+	response.Published = publishedContent
+	response.Timestamp = getCurrentTimestamp(ctx)
+
+    
+	// Determine the ID of the message to validate against
+	validateAgainstID := RDSO_PubMessage
+	if id == RDSO_ValidationMessage {
+		validateAgainstID = IPP_PubMessage
+	}
+
+    // Perform the validation
+	isValid, err := s.ValidateMessage(ctx, validateAgainstID, subscribedContent)
+	if err != nil {
+		return "", fmt.Errorf("validation failed: %v", err)
+	}
+
+	if isValid {
+		response.Status = Valid
+	} else {
+		response.Status = Invalid
+	}
+
+    if err := putState(ctx, id, response); err != nil {
+		return "", fmt.Errorf("failed to put updated response: %v", err)
+	}
+
+	// Return the validation result
+	return string(response.Status), nil
 }
 
-// ReadCurrentData retrieves a specific state from the ledger using ID
-func (s *SmartContract) ReadCurrentData(ctx contractapi.TransactionContextInterface, id string) (*Message, error) {
-    messageJSON, err := ctx.GetStub().GetState(id)
-    if err != nil {
-        return nil, fmt.Errorf("failed to read from world state: %v", err)
-    }
-    if messageJSON == nil {
-        return nil, fmt.Errorf("the message %s does not exist", id)
-    }
+// ValidateMessage compares the subscribed content with the message content in the world state.
+func (s *SmartContract) ValidateMessage(ctx contractapi.TransactionContextInterface, messageID string, subscribedContent interface{}) (bool, error) {
+	var message Message
+	exists, err := s.ReadData(ctx, messageID, &message)
+	if err != nil {
+		return false, fmt.Errorf("failed to fetch message for validation: %v", err)
+	}
 
-    var message Message
-    err = json.Unmarshal(messageJSON, &message)
-    if err != nil {
-        return nil, err
-    }
-    return &message, nil
+	if !exists {
+		return false, fmt.Errorf("message %s does not exist for validation", messageID)
+	}
+
+	subscribedBytes, err := json.Marshal(subscribedContent)
+	if err != nil {
+		return false, fmt.Errorf("failed to marshal subscribed content: %v", err)
+	}
+
+	messageBytes, err := json.Marshal(message.Message)
+	if err != nil {
+		return false, fmt.Errorf("failed to marshal message content: %v", err)
+	}
+
+	// Compare the entire JSON strings
+	return string(subscribedBytes) == string(messageBytes), nil
 }
 
-// GetAllCurrentData retrieves all messages from the ledger
-func (s *SmartContract) GetAllCurrentData(ctx contractapi.TransactionContextInterface) ([]Message, error) {
-    resultsIterator, err := ctx.GetStub().GetStateByRange("", "")
-    if err != nil {
-        return nil, err
-    }
-    defer resultsIterator.Close()
+// ReadData retrieves a specific state from the ledger
+func (s *SmartContract) ReadData(ctx contractapi.TransactionContextInterface, id string, out interface{}) (bool, error) {
+	dataJSON, err := ctx.GetStub().GetState(id)
+	if err != nil {
+		return false, fmt.Errorf("failed to read from world state: %v", err)
+	}
+	if dataJSON == nil {
+		return false, fmt.Errorf("%s does not exist", id)
+	}
 
-    var messages []Message
-    for resultsIterator.HasNext() {
-        queryResponse, err := resultsIterator.Next()
-        if err != nil {
-            return nil, err
-        }
+	err = json.Unmarshal(dataJSON, out)
+	if err != nil {
+		return false, fmt.Errorf("failed to unmarshal data: %v", err)
+	}
 
-        var message Message
-        err = json.Unmarshal(queryResponse.Value, &message)
-        if err != nil {
-            return nil, err
-        }
-        messages = append(messages, message)
-    }
-    return messages, nil
+	return true, nil
+}
+
+// GetAllData retrieves all four predefined data assets from the world state.
+func (s *SmartContract) GetAllData(ctx contractapi.TransactionContextInterface) (map[string]interface{}, error) {
+	ids := []string{RDSO_PubMessage, IPP_PubMessage, RDSO_ValidationMessage, IPP_ValidationMessage}
+	allData := make(map[string]interface{})
+
+	for _, id := range ids {
+		var data interface{}
+		exists, err := s.ReadData(ctx, id, &data)
+		if err != nil {
+			return nil, fmt.Errorf("failed to read data for %s: %v", id, err)
+		}
+		if exists {
+			allData[id] = data
+		}
+	}
+
+	return allData, nil
 }
 
 // GetHistoryForID retrieves the history for a particular ID
-func (s *SmartContract) GetHistoryForID(ctx contractapi.TransactionContextInterface, id string) ([]Response, error) {
-    resultsIterator, err := ctx.GetStub().GetHistoryForKey(id)
-    if err != nil {
-        return nil, err
-    }
-    defer resultsIterator.Close()
+func (s *SmartContract) GetHistoryForID(ctx contractapi.TransactionContextInterface, id string) ([]map[string]interface{}, error) {
+	resultsIterator, err := ctx.GetStub().GetHistoryForKey(id)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get history for %s: %v", id, err)
+	}
+	defer resultsIterator.Close()
 
-    var responses []Response
-    for resultsIterator.HasNext() {
-        queryResponse, err := resultsIterator.Next()
-        if err != nil {
-            return nil, err
-        }
+	var history []map[string]interface{}
+	for resultsIterator.HasNext() {
+		queryResponse, err := resultsIterator.Next()
+		if err != nil {
+			return nil, fmt.Errorf("failed to read next item in history: %v", err)
+		}
 
-        var response Response
-        err = json.Unmarshal(queryResponse.Value, &response)
-        if err != nil {
-            return nil, err
-        }
-        responses = append(responses, response)
-    }
-    return responses, nil
+		var data map[string]interface{}
+		if err := json.Unmarshal(queryResponse.Value, &data); err != nil {
+			return nil, fmt.Errorf("failed to unmarshal history data: %v", err)
+		}
+		history = append(history, data)
+	}
+	return history, nil
 }
 
-// QueryByTypeOrStatus queries for messages or responses by type or status
-func (s *SmartContract) QueryByTypeOrStatus(ctx contractapi.TransactionContextInterface, indexName string, attribute string) ([]Response, error) {
-    queryString := fmt.Sprintf(`{"selector":{"%s":"%s"}}`, indexName, attribute)
-    resultsIterator, err := ctx.GetStub().GetQueryResult(queryString)
-    if err != nil {
-        return nil, err
-    }
-    defer resultsIterator.Close()
-
-    var responses []Response
-    for resultsIterator.HasNext() {
-        queryResponse, err := resultsIterator.Next()
-        if err != nil {
-            return nil, err
-        }
-
-        var response Response
-        err = json.Unmarshal(queryResponse.Value, &response)
-        if err != nil {
-            return nil, err
-        }
-        responses = append(responses, response)
-    }
-    return responses, nil
-}
