@@ -108,12 +108,12 @@ func (s *SmartContract) UpdateMessage(ctx contractapi.TransactionContextInterfac
 
 	// Retrieve the existing message if it exists
 	var message Message
-	exists, err := s.ReadData(ctx, id, &message)
+	message, err := s.ReadData(ctx, id)
 	if err != nil {
 		return fmt.Errorf("failed to read existing message: %v", err)
 	}
 
-	if !exists {
+	if message == nil {
 		message.ID = id
 		message.Type = Standard // Default type
 	}
@@ -142,12 +142,12 @@ func (s *SmartContract) RespondToMessage(ctx contractapi.TransactionContextInter
 	}
 
 	var response Response
-	exists, err := s.ReadData(ctx, id, &response)
+	response, err := s.ReadData(ctx, id)
 	if err != nil {
 		return "", fmt.Errorf("failed to read existing response: %v", err)
 	}
 
-	if !exists {
+	if response == nil {
 		response.ID = id
 		response.Status = Valid // Default status
 	}
@@ -187,12 +187,12 @@ func (s *SmartContract) RespondToMessage(ctx contractapi.TransactionContextInter
 // ValidateMessage compares the subscribed content with the message content in the world state.
 func (s *SmartContract) ValidateMessage(ctx contractapi.TransactionContextInterface, messageID string, subscribedContent interface{}) (bool, error) {
 	var message Message
-	exists, err := s.ReadData(ctx, messageID, &message)
+	message, err := s.ReadData(ctx, messageID)
 	if err != nil {
 		return false, fmt.Errorf("failed to fetch message for validation: %v", err)
 	}
 
-	if !exists {
+	if message == nil {
 		return false, fmt.Errorf("message %s does not exist for validation", messageID)
 	}
 
@@ -211,21 +211,22 @@ func (s *SmartContract) ValidateMessage(ctx contractapi.TransactionContextInterf
 }
 
 // ReadData retrieves a specific state from the ledger
-func (s *SmartContract) ReadData(ctx contractapi.TransactionContextInterface, id string, out interface{}) (bool, error) {
+func (s *SmartContract) ReadData(ctx contractapi.TransactionContextInterface, id string) (interface{}, error) {
 	dataJSON, err := ctx.GetStub().GetState(id)
 	if err != nil {
-		return false, fmt.Errorf("failed to read from world state: %v", err)
+		return nil, fmt.Errorf("failed to read from world state: %v", err)
 	}
 	if dataJSON == nil {
-		return false, fmt.Errorf("%s does not exist", id)
+		return nil, fmt.Errorf("%s does not exist", id)
 	}
 
-	err = json.Unmarshal(dataJSON, out)
+    var data interface{}
+	err = json.Unmarshal(dataJSON, &data)
 	if err != nil {
-		return false, fmt.Errorf("failed to unmarshal data: %v", err)
+		return nil, fmt.Errorf("failed to unmarshal data: %v", err)
 	}
 
-	return true, nil
+	return data, nil
 }
 
 // GetAllData retrieves all four predefined data assets from the world state.
@@ -235,11 +236,11 @@ func (s *SmartContract) GetAllData(ctx contractapi.TransactionContextInterface) 
 
 	for _, id := range ids {
 		var data interface{}
-		exists, err := s.ReadData(ctx, id, &data)
+		data, err := s.ReadData(ctx, id)
 		if err != nil {
 			return nil, fmt.Errorf("failed to read data for %s: %v", id, err)
 		}
-		if exists {
+		if data != nil {
 			allData[id] = data
 		}
 	}
