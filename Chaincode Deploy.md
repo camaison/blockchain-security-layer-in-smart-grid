@@ -78,4 +78,4 @@ docker exec cli peer chaincode invoke \
 --peerAddresses peer0.org2.example.com:9051 \
 --tlsRootCertFiles /opt/gopath/src/github.com/hyperledger/fabric/peer/crypto/peerOrganizations/org1.example.com/peers/peer0.org1.example.com/tls/ca.crt \
 --tlsRootCertFiles /opt/gopath/src/github.com/hyperledger/fabric/peer/crypto/peerOrganizations/org2.example.com/peers/peer0.org2.example.com/tls/ca.crt \
--c '{"function":"Init","Args":[]}'
+-c '{"function":"InitLedger","Args":[]}'
