@@ -3,11 +3,11 @@ package web
 import (
 	"fmt"
 	"net/http"
+	"log"
 
-
-
-	"github.com/swaggo/http-swagger" 
-	_ "github.com/camaison/blockchain-security-layer-in-smart-grid/Middle_Layer/Host1_FabricGatewayRESTAPI/docs"
+	"github.com/hyperledger/fabric-gateway/pkg/client"
+	"github.com/swaggo/http-swagger" // http-swagger middleware
+	_ "rest-api-go/docs"             // This imports the generated Swagger docs
 )
 
 // OrgSetup contains organization's config to interact with the network.
@@ -25,29 +25,35 @@ type OrgSetup struct {
 	Channel      string
 }
 
-
-// @title Hyperledger Fabric Chaincode API
-// @description This is a sample server for Hyperledger Fabric chaincode interaction.
-// @version 1.0
-// @host localhost:3000
-// @BasePath /
-// Serve starts http web server.
+// SetupServer initializes and starts the HTTP server
 func Serve(setups OrgSetup) {
-	http.HandleFunc("/update", setups.UpdateMessage)
-	http.HandleFunc("/respond", setups.RespondToMessage)
-	http.HandleFunc("/getAll", setups.GetAllData)
-	http.HandleFunc("/read", setups.ReadData)
-	http.HandleFunc("/validate", setups.ValidateMessage)
-	http.HandleFunc("/history", setups.GetTxnHistory)
-	
-	// Serve Swagger
-	url := httpSwagger.URL("http://localhost:3000/swagger/doc.json") // The url pointing to API definition
-	http.HandleFunc("/swagger/", httpSwagger.Handler(
-		httpSwagger.URL(url), // The url pointing to API definition
-	))
+	mux := http.NewServeMux()
 
-	fmt.Println("Listening (http://localhost:3000/)...")
-	if err := http.ListenAndServe(":3000", nil); err != nil {
-		fmt.Println(err)
+	// Define routes
+	mux.HandleFunc("/update", setups.UpdateMessage)
+	mux.HandleFunc("/respond", setups.RespondToMessage)
+	mux.HandleFunc("/getAll", setups.GetAllData)
+	mux.HandleFunc("/read", setups.ReadData)
+	mux.HandleFunc("/validate", setups.ValidateMessage)
+	mux.HandleFunc("/history", setups.GetTxnHistory)
+
+	// Serve Swagger documentation
+	mux.Handle("/swagger/", httpSwagger.WrapHandler)
+
+	// Wrap the mux with the logging middleware
+	loggedMux := loggingMiddleware(mux)
+
+	fmt.Println("Listening on http://localhost:3000/ ...")
+	if err := http.ListenAndServe(":3000", loggedMux); err != nil {
+		log.Fatal("ListenAndServe Error:", err)
 	}
 }
+
+// loggingMiddleware logs all incoming HTTP requests
+func loggingMiddleware(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		log.Printf("Received request: %s %s", r.Method, r.URL.Path)
+		next.ServeHTTP(w, r)
+	})
+}
+

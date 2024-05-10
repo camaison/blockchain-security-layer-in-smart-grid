@@ -16,6 +16,8 @@ func main() {
 		TLSCertPath:  cryptoPath + "/peers/peer0.org2.example.com/tls/ca.crt",
 		PeerEndpoint: "dns:///localhost:9051",
 		GatewayPeer:  "peer0.org2.example.com",
+		Chaincode: "goose-validation",
+		Channel: "mychannel", 
 	}
 
 	orgSetup, err := web.Initialize(orgConfig)
