@@ -5,6 +5,7 @@
 #include <unistd.h>
 #include <sys/time.h>
 #include <time.h>
+#include <curl/curl.h>
 
 #include "goose_receiver.h"
 #include "goose_subscriber.h"
@@ -86,11 +87,8 @@ static void gooseListener(GooseSubscriber subscriber, void *parameter)
 void publish(GoosePublisher publisher)
 {
     LinkedList dataSetValues = LinkedList_create();
-    char goose_data[100];
-    sprintf(goose_data, "IPP Circuit Breaker Status: %s", (ipp_status == 1) ? "CLOSED" : "OPEN");
-    LinkedList_add(dataSetValues, MmsValue_newVisibleStringFromByteArray((const uint8_t *)goose_data, strlen(goose_data) + 1));
-    // Add the timestamp to the dataset values
-    LinkedList_add(dataSetValues, MmsValue_newVisibleString(timestamp_str));
+    bool statusBool = (ipp_status == 1);
+    LinkedList_add(dataSetValues, MmsValue_newBoolean(statusBool));    // Add the timestamp to the dataset values
     GoosePublisher_setStNum(publisher, stNum);
     GoosePublisher_setSqNum(publisher, sqNum++);
 
@@ -100,6 +98,16 @@ void publish(GoosePublisher publisher)
     }
 
     LinkedList_destroyDeep(dataSetValues, (LinkedListValueDeleteFunction)MmsValue_delete);
+
+     // Prepare JSON data for the POST request
+    char json_data[512];
+    snprintf(json_data, sizeof(json_data),
+             "{\"id\": \"IPP_ValidationMessage\", \"subscribedContent\": {\"t\": \"%s\", \"stNum\": %u, \"allData\": \"%s\"}, \"publishedContent\": {\"t\": \"%s\", \"stNum\": %u, \"allData\": \"%s\"}}",
+             timestamp_str, GooseSubscriber_getStNum(subscriber), new_ipp_status ? "TRUE" : "FALSE",
+             timestamp_str, stNum, ipp_status ? "TRUE" : "FALSE");
+
+    // Send the POST request
+    send_post_request("http://192.168.37.139:3010/enqueue/respond", json_data);
 }
 
 int main(int argc, char **argv)
@@ -144,10 +152,7 @@ int main(int argc, char **argv)
 
         Thread_sleep(1000); // Adjust the frequency of publishing as needed
         iterations++;
-        if (iterations == 15)
-        {
-            break;
-        }
+        if (iterations > 1){break;}
     }
 
     return 0;
