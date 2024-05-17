@@ -167,7 +167,7 @@ void publish(GoosePublisher publisher) {
                 published_timestamp_str, stNum, statusBool ? "TRUE" : "FALSE");
 
         // Send the POST request
-        send_post_request("http://192.168.37.139:3010/enqueue/respond", json_data);
+        send_post_request("http://192.168.37.142:3000/enqueue/respond", json_data);
 
         update = 0;
     }
