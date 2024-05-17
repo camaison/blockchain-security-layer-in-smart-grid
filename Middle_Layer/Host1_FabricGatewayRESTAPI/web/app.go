@@ -1,59 +1,66 @@
 package web
 
 import (
-	"fmt"
-	"net/http"
-	"log"
+    "fmt"
+    "log"
+    "net/http"
 
-	"github.com/hyperledger/fabric-gateway/pkg/client"
-	"github.com/swaggo/http-swagger" // http-swagger middleware
-	_ "rest-api-go/docs"             // This imports the generated Swagger docs
+    "github.com/hyperledger/fabric-gateway/pkg/client"
+    "github.com/swaggo/http-swagger" // http-swagger middleware
+    _ "rest-api-go/docs"             // This imports the generated Swagger docs
 )
 
 // OrgSetup contains organization's config to interact with the network.
 type OrgSetup struct {
-	OrgName      string
-	MSPID        string
-	CryptoPath   string
-	CertPath     string
-	KeyPath      string
-	TLSCertPath  string
-	PeerEndpoint string
-	GatewayPeer  string
-	Gateway      client.Gateway
-	Chaincode    string
-	Channel      string
+    OrgName      string
+    MSPID        string
+    CryptoPath   string
+    CertPath     string
+    KeyPath      string
+    TLSCertPath  string
+    PeerEndpoint string
+    GatewayPeer  string
+    Gateway      client.Gateway
+    Chaincode    string
+    Channel      string
 }
 
-// SetupServer initializes and starts the HTTP server
+// Serve initializes and starts the HTTP server
 func Serve(setups OrgSetup) {
-	mux := http.NewServeMux()
+    mux := http.NewServeMux()
 
-	// Define routes
-	mux.HandleFunc("/update", setups.UpdateMessage)
-	mux.HandleFunc("/respond", setups.RespondToMessage)
-	mux.HandleFunc("/getAll", setups.GetAllData)
-	mux.HandleFunc("/read", setups.ReadData)
-	mux.HandleFunc("/validate", setups.ValidateMessage)
-	mux.HandleFunc("/history", setups.GetTxnHistory)
+    // Define routes for direct endpoints
+    mux.HandleFunc("/update", setups.UpdateMessage)
+    mux.HandleFunc("/respond", setups.RespondToMessage)
+    mux.HandleFunc("/getAll", setups.GetAllData)
+    mux.HandleFunc("/read", setups.ReadData)
+    mux.HandleFunc("/validate", setups.ValidateMessage)
+    mux.HandleFunc("/history", setups.GetTxnHistory)
 
-	// Serve Swagger documentation
-	mux.Handle("/swagger/", httpSwagger.WrapHandler)
+    // Define routes for enqueue endpoints
+    mux.HandleFunc("/enqueue/update", setups.enqueueUpdateMessageHandler)
+    mux.HandleFunc("/enqueue/respond", setups.enqueueRespondToMessageHandler)
+    mux.HandleFunc("/enqueue/validate", setups.enqueueValidateMessageHandler)
 
-	// Wrap the mux with the logging middleware
-	loggedMux := loggingMiddleware(mux)
+    // Serve Swagger documentation
+    mux.Handle("/swagger/", httpSwagger.WrapHandler)
 
-	fmt.Println("Listening on http://localhost:3000/ ...")
-	if err := http.ListenAndServe(":3000", loggedMux); err != nil {
-		log.Fatal("ListenAndServe Error:", err)
-	}
+    // Wrap the mux with the logging middleware
+    loggedMux := loggingMiddleware(mux)
+
+    // Start the queue processor in a separate goroutine
+    go processQueue(setups)
+
+    fmt.Println("Listening on http://localhost:3030/ ...")
+    if err := http.ListenAndServe(":3030", loggedMux); err != nil {
+        log.Fatal("ListenAndServe Error:", err)
+    }
 }
 
 // loggingMiddleware logs all incoming HTTP requests
 func loggingMiddleware(next http.Handler) http.Handler {
-	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		log.Printf("Received request: %s %s", r.Method, r.URL.Path)
-		next.ServeHTTP(w, r)
-	})
+    return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+        log.Printf("Received request: %s %s", r.Method, r.URL.Path)
+        next.ServeHTTP(w, r)
+    })
 }
-
