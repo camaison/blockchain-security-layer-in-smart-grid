@@ -6,6 +6,7 @@
 #include <sys/time.h>
 #include <time.h>
 #include <curl/curl.h>
+#include <pthread.h>
 
 #include "goose_receiver.h"
 #include "goose_subscriber.h"
@@ -14,6 +15,8 @@
 #include "mms_value.h"
 #include "linked_list.h"
 #include "logging.h"  // Custom logging library
+#include "hal_time.h"
+
 
 volatile int running = 1;
 volatile int ipp_status = 0; // Global variable for the IPP status
@@ -21,6 +24,7 @@ volatile int update = 0; // Global variable for the IPP status
 static uint32_t stNum = 0;
 static uint32_t sqNum = 0;
 static char subscribed_timestamp_str[64]; // Global variable for the timestamp string of the subscribed message
+static char api_timestamp_str[64];
 static char published_timestamp_str[64]; // Global variable for the timestamp string of the published message
 static uint32_t subscribed_stNum = 0;
 static char subscribed_data[1024] = "FALSE";
@@ -30,22 +34,8 @@ static void sigint_handler(int signalId) {
     running = 0;
 }
 
-// Helper function to get formatted UTC timestamp
-static void get_utc_timestamp(char *buffer, size_t buffer_len)
-{
-    struct timeval tv;
-    gettimeofday(&tv, NULL);
-    struct tm *tm_utc = gmtime(&tv.tv_sec);
-    int microsec = tv.tv_usec;
-
-    // Format the timestamp in ISO 8601 with microseconds and 'Z' for UTC time zone
-    snprintf(buffer, buffer_len, "%04d-%02d-%02dT%02d:%02d:%02d.%06dZ",
-             tm_utc->tm_year + 1900, tm_utc->tm_mon + 1, tm_utc->tm_mday,
-             tm_utc->tm_hour, tm_utc->tm_min, tm_utc->tm_sec, microsec);
-}
-
 // Function to send a POST request with JSON data
-void send_post_request(const char *url, const char *json_data)
+void api_validate(const char *url, const char *json_data)
 {
     CURL *curl;
     CURLcode res;
@@ -71,9 +61,7 @@ void send_post_request(const char *url, const char *json_data)
         // Check for errors
         if (res != CURLE_OK) {
             fprintf(stderr, "curl_easy_perform() failed: %s\n", curl_easy_strerror(res));
-        } else {
-            printf("\nPOST request sent successfully.\n");
-        }
+        } 
 
         // Clean up
         curl_slist_free_all(headers);
@@ -95,6 +83,26 @@ void formatUtcTime(char* buffer, size_t buffer_size, uint64_t epoch_ms) {
     strcat(buffer, ms_buffer);
 }
 
+void* handle_update(void* arg) {
+    char json_data[4024];
+    bool statusBool = (ipp_status == 1);
+
+    // Simulate the delay
+    Thread_sleep(5000); // Sleep for 5 seconds
+
+    // Prepare JSON data for the POST request
+    snprintf(json_data, sizeof(json_data),
+             "{\"id\": \"IPP_ValidationMessage\", \"subscribedContent\": {\"t\": \"%s\", \"stNum\": %u, \"allData\": \"%s\"}, \"publishedContent\": {\"t\": \"%s\", \"stNum\": %u, \"allData\": \"%s\"}}",
+             api_timestamp_str, subscribed_stNum, subscribed_data,
+             published_timestamp_str, stNum, statusBool ? "TRUE" : "FALSE");
+    
+    // Send the POST request
+    api_validate("http://192.168.37.142:3000/respond", json_data);
+
+    return NULL;
+}
+
+
 void gooseListener(GooseSubscriber subscriber, void *parameter) {
     uint8_t src[6], dst[6];
     GooseSubscriber_getSrcMac(subscriber, src);
@@ -103,31 +111,12 @@ void gooseListener(GooseSubscriber subscriber, void *parameter) {
     sprintf(srcStr, "%02x:%02x:%02x:%02x:%02x:%02x", src[0], src[1], src[2], src[3], src[4], src[5]);
     sprintf(dstStr, "%02x:%02x:%02x:%02x:%02x:%02x", dst[0], dst[1], dst[2], dst[3], dst[4], dst[5]);
 
-    char formattedTime[100];
-    formatUtcTime(formattedTime, sizeof(formattedTime), GooseSubscriber_getTimestamp(subscriber));
+    formatUtcTime(subscribed_timestamp_str, sizeof(subscribed_timestamp_str), GooseSubscriber_getTimestamp(subscriber));
 
-    // printf("{\n"
-    //        "\"goID\": \"%s\",\n"
-    //        "\"Src\": \"%s\",\n"
-    //        "\"Dst\": \"%s\",\n"
-    //        "\"t\": \"%s\",\n"
-    //        "\"size\": %d,\n"
-    //        "\"gocbRef\": \"%s\",\n"
-    //        "\"stNum\": %u,\n"
-    //        "\"allData\": %s\n"
-    //        "}\n",
-    //        GooseSubscriber_getGoId(subscriber),
-    //        srcStr, dstStr,
-    //        formattedTime,
-    //        189, // This should be dynamic, based on actual data size
-    //        GooseSubscriber_getGoCbRef(subscriber),
-    //        GooseSubscriber_getStNum(subscriber),
-    //        GooseSubscriber_getDataSetValues(subscriber) ? "TRUE" : "FALSE");
-
-    get_utc_timestamp(subscribed_timestamp_str, sizeof(subscribed_timestamp_str));
     if (subscribed_stNum != GooseSubscriber_getStNum(subscriber)){
         subscribed_stNum = GooseSubscriber_getStNum(subscriber);
         update = 1;
+        memcpy(api_timestamp_str, subscribed_timestamp_str, sizeof(subscribed_timestamp_str));
         stNum++;
         sqNum = 0;
     }
@@ -135,11 +124,22 @@ void gooseListener(GooseSubscriber subscriber, void *parameter) {
     MmsValue_printToBuffer(values, subscribed_data, sizeof(subscribed_data));
     // Update subscribed_data with a boolean value
     size_t length = strlen(subscribed_data);
-    if (subscribed_data[length - 2] == '1') {
+    if (length == 6) {
         strcpy(subscribed_data, "TRUE");
+        ipp_status = 0;
     } else {
         strcpy(subscribed_data, "FALSE");
+        ipp_status = 1;
     }
+
+    printf("{\n"
+           "\"t\": \"%s\",\n"
+           "\"stNum\": %u,\n"
+           "\"allData\": %s\n"
+           "}\n",
+           subscribed_timestamp_str,
+           subscribed_stNum,
+           subscribed_data);
 }
 
 // GOOSE publisher function
@@ -147,32 +147,40 @@ void publish(GoosePublisher publisher) {
     LinkedList dataSetValues = LinkedList_create();
     bool statusBool = (ipp_status == 1);
     LinkedList_add(dataSetValues, MmsValue_newBoolean(statusBool));
+
     GoosePublisher_setStNum(publisher, stNum);
     GoosePublisher_setSqNum(publisher, sqNum++);
+
+    // Generate the current timestamp and set it for the publisher
+    uint64_t currentTime = Hal_getTimeInMs();
+    GoosePublisher_setTimestamp(publisher, currentTime);
+
+    formatUtcTime(published_timestamp_str, sizeof(published_timestamp_str), currentTime);
 
     if (GoosePublisher_publish(publisher, dataSetValues) == -1) {
         log_error("Error sending GOOSE message");
     } else {
-        log_debug("GOOSE message sent successfully: Status %s", statusBool ? "True" : "False");
+        /* log_debug("GOOSE message sent successfully:\
+        \n{\n"
+           "\"t\": \"%s\",\n"
+           "\"stNum\": %u,\n"
+           "\"allData\": %s\n"
+           "}\n",
+           published_timestamp_str,
+           stNum,
+           statusBool ? "TRUE" : "FALSE");*/
     }
 
-    get_utc_timestamp(published_timestamp_str, sizeof(published_timestamp_str));
-
-    if (update){
-        // Prepare JSON data for the POST request
-        char json_data[4024];
-        snprintf(json_data, sizeof(json_data),
-                "{\"id\": \"IPP_ValidationMessage\", \"subscribedContent\": {\"t\": \"%s\", \"stNum\": %u, \"allData\": \"%s\"}, \"publishedContent\": {\"t\": \"%s\", \"stNum\": %u, \"allData\": \"%s\"}}",
-                subscribed_timestamp_str, subscribed_stNum, subscribed_data,
-                published_timestamp_str, stNum, statusBool ? "TRUE" : "FALSE");
-
-        // Send the POST request
-        send_post_request("http://192.168.37.142:3000/enqueue/respond", json_data);
-
+    if (update) {
         update = 0;
+        pthread_t update_thread;
+        pthread_create(&update_thread, NULL, handle_update, NULL);
+        pthread_detach(update_thread); // Automatically reclaim thread resources when done
     }
+
     LinkedList_destroyDeep(dataSetValues, (LinkedListValueDeleteFunction)MmsValue_delete);
 }
+
 
 int main(int argc, char **argv) {
     signal(SIGINT, sigint_handler);
@@ -209,7 +217,7 @@ int main(int argc, char **argv) {
 
     while (running) {
         publish(publisher);
-        Thread_sleep(3000); // Sleep for a second
+        Thread_sleep(5000); // Sleep for a second
     }
 
     GoosePublisher_destroy(publisher);

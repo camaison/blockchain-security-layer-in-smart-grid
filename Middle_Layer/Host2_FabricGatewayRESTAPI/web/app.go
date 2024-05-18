@@ -51,8 +51,8 @@ func Serve(setups OrgSetup) {
     // Start the queue processor in a separate goroutine
     go processQueue(setups)
 
-    fmt.Println("Listening on http://localhost:3030/ ...")
-    if err := http.ListenAndServe(":3030", loggedMux); err != nil {
+    fmt.Println("Listening on http://localhost:3000/ ...")
+    if err := http.ListenAndServe(":3000", loggedMux); err != nil {
         log.Fatal("ListenAndServe Error:", err)
     }
 }
