@@ -1,14 +1,12 @@
 package web
 
 import (
-    "bytes"
     "encoding/json"
     "fmt"
-    "log"
     "net/http"
-    "net/http/httptest"
     "sync"
     "time"
+    "log"
 )
 
 // Define the types of jobs
@@ -32,9 +30,8 @@ var queueMutex sync.Mutex
 // Enqueue a new job
 func enqueueJob(job Job) {
     queueMutex.Lock()
-    defer queueMutex.Unlock()
     jobQueue = append(jobQueue, job)
-    logQueue("Job added")
+    queueMutex.Unlock()
 }
 
 // Dequeue a job
@@ -46,15 +43,7 @@ func dequeueJob() (Job, bool) {
     }
     job := jobQueue[0]
     jobQueue = jobQueue[1:]
-    logQueue("Job removed")
     return job, true
-}
-
-func logQueue(action string) {
-    log.Printf("%s: Current Queue Length: %d\n", action, len(jobQueue))
-    for i, job := range jobQueue {
-        log.Printf("Queue[%d]: Type: %d, Payload: %v\n", i, job.Type, job.Payload)
-    }
 }
 
 func processQueue(setup OrgSetup) {
@@ -65,7 +54,6 @@ func processQueue(setup OrgSetup) {
             continue
         }
 
-        log.Printf("Processing job: Type: %d, Payload: %v\n", job.Type, job.Payload)
         switch job.Type {
         case UpdateMessageJob:
             setup.processUpdateMessage(job.Payload)
@@ -77,95 +65,106 @@ func processQueue(setup OrgSetup) {
     }
 }
 
-// Process functions to call the actual handlers
+// Placeholder for your actual processing functions
 func (setup *OrgSetup) processUpdateMessage(data map[string]interface{}) {
-    // Convert the data map to JSON bytes
-    requestData, err := json.Marshal(data)
+    fmt.Printf("Processing UpdateMessage: %v\n", data)
+    // Call the actual UpdateMessage function here
+    id := data["id"].(string)
+    messageType := data["messageType"].(string)
+    messageContent := data["messageContent"].(map[string]interface{})
+
+    network := setup.Gateway.GetNetwork(setup.Channel)
+    contract := network.GetContract(setup.Chaincode)
+
+    messageContentBytes, err := json.Marshal(messageContent)
     if err != nil {
-        log.Printf("JSON Marshal error: %s\n", err)
+        log.Println("JSON Marshal error:", err)
         return
     }
 
-    // Create a new HTTP request
-    req, err := http.NewRequest("POST", "/update", bytes.NewReader(requestData))
+    _, err = contract.SubmitTransaction("UpdateMessage", id, string(messageContentBytes), messageType)
     if err != nil {
-        log.Printf("Error creating request: %s\n", err)
+        log.Println("Error invoking UpdateMessage:", err)
         return
     }
-    req.Header.Set("Content-Type", "application/json")
 
-    // Create a ResponseRecorder to capture the response
-    w := httptest.NewRecorder()
-    setup.UpdateMessage(w, req)
-
-    // Check the response
-    res := w.Result()
-    defer res.Body.Close()
-    if res.StatusCode != http.StatusOK {
-        log.Printf("Error processing update message: %s\n", res.Status)
-    } else {
-        log.Printf("UpdateMessage processed successfully: %s\n", res.Status)
+    // Broadcast the updated data to all WebSocket clients
+    allData, err := setup.getAllData()
+    if err != nil {
+        log.Println("Error fetching all data:", err)
+        return
     }
+
+    broadcastUpdate(allData)
 }
 
 func (setup *OrgSetup) processRespondToMessage(data map[string]interface{}) {
-    // Convert the data map to JSON bytes
-    requestData, err := json.Marshal(data)
+    fmt.Printf("Processing RespondToMessage: %v\n", data)
+    // Call the actual RespondToMessage function here
+    id := data["id"].(string)
+    subscribedContent := data["subscribedContent"].(map[string]interface{})
+    publishedContent := data["publishedContent"].(map[string]interface{})
+
+    network := setup.Gateway.GetNetwork(setup.Channel)
+    contract := network.GetContract(setup.Chaincode)
+
+    subscribedContentBytes, err := json.Marshal(subscribedContent)
     if err != nil {
-        log.Printf("JSON Marshal error: %s\n", err)
+        log.Println("JSON Marshal error:", err)
         return
     }
 
-    // Create a new HTTP request
-    req, err := http.NewRequest("POST", "/respond", bytes.NewReader(requestData))
+    publishedContentBytes, err := json.Marshal(publishedContent)
     if err != nil {
-        log.Printf("Error creating request: %s\n", err)
+        log.Println("JSON Marshal error:", err)
         return
     }
-    req.Header.Set("Content-Type", "application/json")
 
-    // Create a ResponseRecorder to capture the response
-    w := httptest.NewRecorder()
-    setup.RespondToMessage(w, req)
-
-    // Check the response
-    res := w.Result()
-    defer res.Body.Close()
-    if res.StatusCode != http.StatusOK {
-        log.Printf("Error processing respond message: %s\n", res.Status)
-    } else {
-        log.Printf("RespondToMessage processed successfully: %s\n", res.Status)
+    _, err = contract.SubmitTransaction("RespondToMessage", id, string(subscribedContentBytes), string(publishedContentBytes))
+    if err != nil {
+        log.Println("Error invoking RespondToMessage:", err)
+        return
     }
+
+    // Broadcast the updated data to all WebSocket clients
+    allData, err := setup.getAllData()
+    if err != nil {
+        log.Println("Error fetching all data:", err)
+        return
+    }
+
+    broadcastUpdate(allData)
 }
 
 func (setup *OrgSetup) processValidateMessage(data map[string]interface{}) {
-    // Convert the data map to JSON bytes
-    requestData, err := json.Marshal(data)
+    fmt.Printf("Processing ValidateMessage: %v\n", data)
+    // Call the actual ValidateMessage function here
+    messageID := data["messageID"].(string)
+    subscribedContent := data["subscribedContent"].(map[string]interface{})
+
+    network := setup.Gateway.GetNetwork(setup.Channel)
+    contract := network.GetContract(setup.Chaincode)
+
+    subscribedContentBytes, err := json.Marshal(subscribedContent)
     if err != nil {
-        log.Printf("JSON Marshal error: %s\n", err)
+        log.Println("JSON Marshal error:", err)
         return
     }
 
-    // Create a new HTTP request
-    req, err := http.NewRequest("POST", "/validate", bytes.NewReader(requestData))
+    _, err = contract.EvaluateTransaction("ValidateMessage", messageID, string(subscribedContentBytes))
     if err != nil {
-        log.Printf("Error creating request: %s\n", err)
+        log.Println("Error invoking ValidateMessage:", err)
         return
     }
-    req.Header.Set("Content-Type", "application/json")
 
-    // Create a ResponseRecorder to capture the response
-    w := httptest.NewRecorder()
-    setup.ValidateMessage(w, req)
-
-    // Check the response
-    res := w.Result()
-    defer res.Body.Close()
-    if res.StatusCode != http.StatusOK {
-        log.Printf("Error processing validate message: %s\n", res.Status)
-    } else {
-        log.Printf("ValidateMessage processed successfully: %s\n", res.Status)
+    // Broadcast the updated data to all WebSocket clients
+    allData, err := setup.getAllData()
+    if err != nil {
+        log.Println("Error fetching all data:", err)
+        return
     }
+
+    broadcastUpdate(allData)
 }
 
 func (setup *OrgSetup) enqueueValidateMessageHandler(w http.ResponseWriter, r *http.Request) {

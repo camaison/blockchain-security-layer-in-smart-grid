@@ -71,7 +71,7 @@ void api_update(const char* timestamp, uint32_t stNum, const char* allData) {
 
         const char *json_data = json_object_to_json_string(jobj);
 
-        curl_easy_setopt(curl, CURLOPT_URL, "http://192.168.37.139:3000/update");
+        curl_easy_setopt(curl, CURLOPT_URL, "http://192.168.37.139:3000/enqueue/update");
         curl_easy_setopt(curl, CURLOPT_POSTFIELDS, json_data);
         curl_easy_setopt(curl, CURLOPT_TIMEOUT_MS, 5000L);  // Set a short timeout
 
