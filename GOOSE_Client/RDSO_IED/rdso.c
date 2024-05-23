@@ -26,18 +26,20 @@ static char subscribed_timestamp_str[64]; // Global variable for the timestamp s
 static uint32_t subscribed_stNum = 0;
 static char subscribed_data[1024] = "FALSE";
 static bool statusBool = true;
+static char update_status[24] = "Standard";
 
 char gocbRef[100] = "simpleIOGenericIO/LLN0$GO$gcbAnalogValues";
 char datSet[100] = "simpleIOGenericIO/LLN0$AnalogValues";
 char goID[100] = "simpleIOGenericIO/LLN0$GO$gcbAnalogValues";
 
+static pthread_mutex_t lock; // Mutex for thread-safe operations
 
 // Signal handler for graceful termination
 static void sigint_handler(int signalId) {
     running = 0;
 }
 
- void formatUtcTime(char* buffer, size_t buffer_size, uint64_t epoch_ms) {
+void formatUtcTime(char* buffer, size_t buffer_size, uint64_t epoch_ms) {
     time_t rawtime = epoch_ms / 1000;
     struct tm * ptm = gmtime(&rawtime);
 
@@ -48,7 +50,6 @@ static void sigint_handler(int signalId) {
     sprintf(ms_buffer, ".%03d UTC", milliseconds);
     strcat(buffer, ms_buffer);
 }
-
 
 // Function to send a non-blocking POST request with JSON data
 void api_update(const char* timestamp, uint32_t stNum, const char* allData) {
@@ -66,7 +67,7 @@ void api_update(const char* timestamp, uint32_t stNum, const char* allData) {
         json_object_object_add(jmessageContent, "allData", json_object_new_string(allData));
 
         json_object_object_add(jobj, "id", json_object_new_string("RDSO_PubMessage"));
-        json_object_object_add(jobj, "messageType", json_object_new_string("Standard"));
+        json_object_object_add(jobj, "messageType", json_object_new_string(update_status));
         json_object_object_add(jobj, "messageContent", jmessageContent);
 
         const char *json_data = json_object_to_json_string(jobj);
@@ -93,9 +94,7 @@ void api_update(const char* timestamp, uint32_t stNum, const char* allData) {
 }
 
 void* handle_update(void* arg) {
-
     api_update(published_timestamp_str, stNum, statusBool ? "TRUE" : "FALSE");
-    
     return NULL;
 }
 
@@ -111,7 +110,7 @@ void publish(GoosePublisher publisher) {
     
     formatUtcTime(published_timestamp_str, sizeof(published_timestamp_str), currentTime);
 
-    if (update) {   
+    if (update) {
         update = 0;
         pthread_t update_thread;
         pthread_create(&update_thread, NULL, handle_update, NULL);
@@ -134,12 +133,10 @@ void publish(GoosePublisher publisher) {
            statusBool ? "TRUE" : "FALSE");*/
     }
 
-
     LinkedList_destroyDeep(dataSetValues, (LinkedListValueDeleteFunction)MmsValue_delete);
 }
 
-
- void gooseListener(GooseSubscriber subscriber, void *parameter) {
+void gooseListener(GooseSubscriber subscriber, void *parameter) {
     uint8_t src[6], dst[6];
     GooseSubscriber_getSrcMac(subscriber, src);
     GooseSubscriber_getDstMac(subscriber, dst);
@@ -175,6 +172,7 @@ void publish(GoosePublisher publisher) {
 
 int main(int argc, char **argv) {
     signal(SIGINT, sigint_handler);
+    pthread_mutex_init(&lock, NULL); // Initialize the mutex
     char *interface = (argc > 1) ? argv[1] : "ens33";
     log_info("Using interface %s", interface);
 
@@ -200,6 +198,7 @@ int main(int argc, char **argv) {
     int toggleCounter = 0;
     while (running) {
         if (GooseReceiver_isRunning(receiver)) {
+            pthread_mutex_lock(&lock); // Lock the mutex
             if (toggleCounter++ % 10 == 0) {
                 int old_status = rdso_status;
                 rdso_status = !rdso_status;
@@ -214,14 +213,17 @@ int main(int argc, char **argv) {
             GoosePublisher_setStNum(publisher, stNum);
             GoosePublisher_setSqNum(publisher, sqNum);
 
+            pthread_mutex_unlock(&lock); // Unlock the mutex
+
             publish(publisher);
-            Thread_sleep(5000); // Sleep for a second
+            Thread_sleep(5000); // Sleep for 5 seconds
         }
     }
 
     GoosePublisher_destroy(publisher);
     GooseReceiver_stop(receiver);
     GooseReceiver_destroy(receiver);
+    pthread_mutex_destroy(&lock); // Destroy the mutex
     log_info("Application terminated gracefully");
 
     return 0;
