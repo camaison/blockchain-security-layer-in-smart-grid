@@ -7,6 +7,7 @@
 #include <time.h>
 #include <curl/curl.h>
 #include <pthread.h>
+#include <json-c/json.h> // Include json-c header
 
 #include "goose_receiver.h"
 #include "goose_subscriber.h"
@@ -16,7 +17,6 @@
 #include "linked_list.h"
 #include "logging.h"  // Custom logging library
 #include "hal_time.h"
-
 
 volatile int running = 1;
 volatile int ipp_status = 0; // Global variable for the IPP status
@@ -28,6 +28,9 @@ static char api_timestamp_str[64];
 static char published_timestamp_str[64]; // Global variable for the timestamp string of the published message
 static uint32_t subscribed_stNum = 0;
 static char subscribed_data[1024] = "FALSE";
+static GoosePublisher global_publisher;
+
+pthread_mutex_t lock; // Mutex for protecting shared variables
 
 // Signal handler for graceful termination
 static void sigint_handler(int signalId) {
@@ -35,8 +38,7 @@ static void sigint_handler(int signalId) {
 }
 
 // Function to send a POST request with JSON data
-void api_validate(const char *url, const char *json_data)
-{
+void api_validate(const char *url, const char *json_data) {
     CURL *curl;
     CURLcode res;
 
@@ -57,11 +59,11 @@ void api_validate(const char *url, const char *json_data)
 
         // Perform the request, res will get the return code
         res = curl_easy_perform(curl);
-        
+
         // Check for errors
         if (res != CURLE_OK) {
             fprintf(stderr, "curl_easy_perform() failed: %s\n", curl_easy_strerror(res));
-        } 
+        }
 
         // Clean up
         curl_slist_free_all(headers);
@@ -83,7 +85,61 @@ void formatUtcTime(char* buffer, size_t buffer_size, uint64_t epoch_ms) {
     strcat(buffer, ms_buffer);
 }
 
+// Function to send a non-blocking POST request with JSON data
+void api_update(const char* timestamp, uint32_t stNum, const char* allData, const char* update_status) {
+    CURL *curl;
+    CURLcode res;
+
+    curl_global_init(CURL_GLOBAL_ALL);
+    curl = curl_easy_init();
+    if(curl) {
+        json_object *jobj = json_object_new_object();
+        json_object *jmessageContent = json_object_new_object();
+
+        json_object_object_add(jmessageContent, "t", json_object_new_string(timestamp));
+        json_object_object_add(jmessageContent, "stNum", json_object_new_int(stNum));
+        json_object_object_add(jmessageContent, "allData", json_object_new_string(allData));
+
+        json_object_object_add(jobj, "id", json_object_new_string("IPP_PubMessage"));
+        json_object_object_add(jobj, "messageType", json_object_new_string(update_status));
+        json_object_object_add(jobj, "messageContent", jmessageContent);
+
+        const char *json_data = json_object_to_json_string(jobj);
+        curl_easy_setopt(curl, CURLOPT_URL, "http://192.168.37.142:3000/update");
+        curl_easy_setopt(curl, CURLOPT_POSTFIELDS, json_data);
+        curl_easy_setopt(curl, CURLOPT_TIMEOUT_MS, 5000L);  // Set a short timeout
+
+        struct curl_slist *headers = NULL;
+        headers = curl_slist_append(headers, "Content-Type: application/json");
+        curl_easy_setopt(curl, CURLOPT_HTTPHEADER, headers);
+
+        res = curl_easy_perform(curl);
+
+        if(res != CURLE_OK) {
+            fprintf(stderr, "curl_easy_perform() failed: %s\n", curl_easy_strerror(res));
+        }
+
+        curl_slist_free_all(headers);
+        curl_easy_cleanup(curl);
+        json_object_put(jobj);
+    }
+    curl_global_cleanup();
+}
+
+// Callback function to write response data
+size_t write_callback(void *ptr, size_t size, size_t nmemb, void *stream) {
+    size_t total_size = size * nmemb;
+    if(total_size < 1024) {
+        memcpy(stream, ptr, total_size);
+        ((char*)stream)[total_size] = '\0'; // Null-terminate the string
+    }
+    return total_size;
+}
+
+void publish(GoosePublisher publisher);
+
 void* handle_update(void* arg) {
+    //GoosePublisher publisher = (GoosePublisher)arg; // Cast the argument to GoosePublisher
     char json_data[4024];
     bool statusBool = (ipp_status == 1);
 
@@ -96,13 +152,66 @@ void* handle_update(void* arg) {
              api_timestamp_str, subscribed_stNum, subscribed_data,
              published_timestamp_str, stNum, statusBool ? "TRUE" : "FALSE");
     
-    // Send the POST request
-    api_validate("http://192.168.37.142:3000/respond", json_data);
+    // Send the POST request and get the response
+    CURL *curl;
+    CURLcode res;
+    curl_global_init(CURL_GLOBAL_DEFAULT);
+    curl = curl_easy_init();
+    if(curl) {
+        struct curl_slist *headers = NULL;
+        headers = curl_slist_append(headers, "Content-Type: application/json");
+        
+        curl_easy_setopt(curl, CURLOPT_URL, "http://192.168.37.142:3000/respond");
+        curl_easy_setopt(curl, CURLOPT_POSTFIELDS, json_data);
+        curl_easy_setopt(curl, CURLOPT_HTTPHEADER, headers);
+        
+        char response_buffer[1024] = {0}; // Initialize response_buffer to empty
+        curl_easy_setopt(curl, CURLOPT_WRITEDATA, response_buffer);
+        curl_easy_setopt(curl, CURLOPT_WRITEFUNCTION, write_callback); // Use a callback function to write response data
+
+        res = curl_easy_perform(curl);
+        curl_slist_free_all(headers);
+        curl_easy_cleanup(curl);
+
+        if(res == CURLE_OK) {
+            printf("%s\n", response_buffer); // Print the response   
+        } else {
+            fprintf(stderr, "curl_easy_perform() failed: %s\n", curl_easy_strerror(res));
+            // Handle the error appropriately in your application
+        }
+        
+        curl_global_cleanup();
+
+        // Handle the API response
+        if (strcmp(response_buffer, "Result: Invalid") == 0) {
+            // Lock the mutex to ensure thread-safe access to shared variables
+            pthread_mutex_lock(&lock);
+
+            // Increment stNum and reset sqNum
+            stNum++;
+            sqNum = 0;
+
+            // Reverse the IPP status
+            ipp_status = !ipp_status;
+            statusBool = (ipp_status == 1);
+
+            // Unlock the mutex
+            pthread_mutex_unlock(&lock);
+
+            // Publish the new GOOSE message with the updated status
+            publish(global_publisher);
+
+            // Make the corrective action API update call
+            api_update(published_timestamp_str, stNum, statusBool ? "TRUE" : "FALSE", "Corrective");
+        }
+
+    }
 
     return NULL;
 }
 
 
+// Listener for GOOSE messages
 void gooseListener(GooseSubscriber subscriber, void *parameter) {
     uint8_t src[6], dst[6];
     GooseSubscriber_getSrcMac(subscriber, src);
@@ -132,14 +241,14 @@ void gooseListener(GooseSubscriber subscriber, void *parameter) {
         ipp_status = 1;
     }
 
-    printf("{\n"
-           "\"t\": \"%s\",\n"
-           "\"stNum\": %u,\n"
-           "\"allData\": %s\n"
-           "}\n",
-           subscribed_timestamp_str,
-           subscribed_stNum,
-           subscribed_data);
+//     printf("{\n"
+//            "\"t\": \"%s\",\n"
+//            "\"stNum\": %u,\n"
+//            "\"allData\": %s\n"
+//            "}\n",
+//            subscribed_timestamp_str,
+//            subscribed_stNum,
+//            subscribed_data);
 }
 
 // GOOSE publisher function
@@ -172,6 +281,7 @@ void publish(GoosePublisher publisher) {
     }
 
     if (update) {
+        global_publisher = publisher;
         update = 0;
         pthread_t update_thread;
         pthread_create(&update_thread, NULL, handle_update, NULL);
@@ -181,13 +291,15 @@ void publish(GoosePublisher publisher) {
     LinkedList_destroyDeep(dataSetValues, (LinkedListValueDeleteFunction)MmsValue_delete);
 }
 
-
 int main(int argc, char **argv) {
     signal(SIGINT, sigint_handler);
+    pthread_mutex_init(&lock, NULL); // Initialize the mutex
+
     char *interface = (argc > 1) ? argv[1] : "ens33";
     char gocbRef[100] = "simpleIOGenericIO/LLN0$GO$gcbAnalogValues";
     char datSet[100] = "simpleIOGenericIO/LLN0$AnalogValues";
     char goID[100] = "simpleIOGenericIO/LLN0$GO$gcbAnalogValues";
+    
     log_info("Using interface %s", interface);
 
     GooseReceiver receiver = GooseReceiver_create();
@@ -216,13 +328,16 @@ int main(int argc, char **argv) {
     GoosePublisher_setConfRev(publisher, 1);
 
     while (running) {
+        pthread_mutex_lock(&lock); // Lock the mutex
         publish(publisher);
-        Thread_sleep(5000); // Sleep for a second
+        pthread_mutex_unlock(&lock); // Unlock the mutex
+        Thread_sleep(5000); // Sleep for 5 seconds
     }
 
     GoosePublisher_destroy(publisher);
     GooseReceiver_stop(receiver);
     GooseReceiver_destroy(receiver);
+    pthread_mutex_destroy(&lock); // Destroy the mutex
     log_info("Application terminated gracefully");
 
     return 0;
