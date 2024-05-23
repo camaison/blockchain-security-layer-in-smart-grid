@@ -4,7 +4,9 @@ import (
     "fmt"
     "log"
     "net/http"
+    "sync"
 
+    "github.com/gorilla/websocket"
     "github.com/hyperledger/fabric-gateway/pkg/client"
     "github.com/swaggo/http-swagger" // http-swagger middleware
     _ "rest-api-go/docs"             // This imports the generated Swagger docs
@@ -25,6 +27,18 @@ type OrgSetup struct {
     Channel      string
 }
 
+// WebSocket upgrader configuration
+var upgrader = websocket.Upgrader{
+    ReadBufferSize:  1024,
+    WriteBufferSize: 1024,
+    CheckOrigin: func(r *http.Request) bool {
+        return true // Allow all connections
+    },
+}
+
+var clients = make(map[*websocket.Conn]bool)
+var clientsMutex sync.Mutex
+
 // Serve initializes and starts the HTTP server
 func Serve(setups OrgSetup) {
     mux := http.NewServeMux()
@@ -44,6 +58,12 @@ func Serve(setups OrgSetup) {
 
     // Serve Swagger documentation
     mux.Handle("/swagger/", httpSwagger.WrapHandler)
+
+    // WebSocket endpoint for real-time updates
+    mux.HandleFunc("/ws", setups.handleWebSocket)
+
+    // Serve the static HTML file
+    mux.Handle("/", http.FileServer(http.Dir("./static")))
 
     // Wrap the mux with the logging middleware
     loggedMux := loggingMiddleware(mux)
