@@ -20,15 +20,17 @@
 
 volatile int running = 1;
 volatile int ipp_status = 0; // Global variable for the IPP status
-volatile int update = 0; // Global variable for the IPP status
+volatile int update = 0; // Global variable to trigger status update
 static uint32_t stNum = 0;
 static uint32_t sqNum = 0;
 static char subscribed_timestamp_str[64]; // Global variable for the timestamp string of the subscribed message
 static char api_timestamp_str[64];
+static char api_subscribed_data[1024];
 static char published_timestamp_str[64]; // Global variable for the timestamp string of the published message
 static uint32_t subscribed_stNum = 0;
 static char subscribed_data[1024] = "FALSE";
 static GoosePublisher global_publisher;
+static uint32_t previous_subscribed_stNum = 0; //THe stnum before the status update to be validated. subscribed stnum is reverted to this if the action is invalid
 
 pthread_mutex_t lock; // Mutex for protecting shared variables
 
@@ -37,38 +39,41 @@ static void sigint_handler(int signalId) {
     running = 0;
 }
 
+void log_error_with_retry(const char *message, int retry_count) {
+    fprintf(stderr, "%s Retry count: %d\n", message, retry_count);
+}
+
 // Function to send a POST request with JSON data
 void api_validate(const char *url, const char *json_data) {
     CURL *curl;
     CURLcode res;
+    int retry_count = 0;
+    int max_retries = 3;
 
-    // Initialize curl
     curl_global_init(CURL_GLOBAL_DEFAULT);
-    curl = curl_easy_init();
-    if (curl) {
-        // Set the URL for the POST request
-        curl_easy_setopt(curl, CURLOPT_URL, url);
+    do {
+        curl = curl_easy_init();
+        if (curl) {
+            curl_easy_setopt(curl, CURLOPT_URL, url);
+            curl_easy_setopt(curl, CURLOPT_POSTFIELDS, json_data);
 
-        // Set the POST data
-        curl_easy_setopt(curl, CURLOPT_POSTFIELDS, json_data);
+            struct curl_slist *headers = NULL;
+            headers = curl_slist_append(headers, "Content-Type: application/json");
+            curl_easy_setopt(curl, CURLOPT_HTTPHEADER, headers);
 
-        // Set the Content-Type header
-        struct curl_slist *headers = NULL;
-        headers = curl_slist_append(headers, "Content-Type: application/json");
-        curl_easy_setopt(curl, CURLOPT_HTTPHEADER, headers);
+            res = curl_easy_perform(curl);
+            if (res != CURLE_OK) {
+                log_error_with_retry("curl_easy_perform() failed", retry_count);
+                retry_count++;
+                Thread_sleep(2000 * retry_count); // Exponential backoff
+            } else {
+                retry_count = max_retries; // Exit the loop if successful
+            }
 
-        // Perform the request, res will get the return code
-        res = curl_easy_perform(curl);
-
-        // Check for errors
-        if (res != CURLE_OK) {
-            fprintf(stderr, "curl_easy_perform() failed: %s\n", curl_easy_strerror(res));
+            curl_slist_free_all(headers);
+            curl_easy_cleanup(curl);
         }
-
-        // Clean up
-        curl_slist_free_all(headers);
-        curl_easy_cleanup(curl);
-    }
+    } while (res != CURLE_OK && retry_count < max_retries);
 
     curl_global_cleanup();
 }
@@ -78,7 +83,6 @@ void formatUtcTime(char* buffer, size_t buffer_size, uint64_t epoch_ms) {
     struct tm * ptm = gmtime(&rawtime);
 
     strftime(buffer, buffer_size, "%b %d, %Y %H:%M:%S", ptm);
-    // Add milliseconds manually since strftime doesn't support them
     int milliseconds = epoch_ms % 1000;
     char ms_buffer[50];
     sprintf(ms_buffer, ".%03d UTC", milliseconds);
@@ -89,40 +93,48 @@ void formatUtcTime(char* buffer, size_t buffer_size, uint64_t epoch_ms) {
 void api_update(const char* timestamp, uint32_t stNum, const char* allData, const char* update_status) {
     CURL *curl;
     CURLcode res;
+    int retry_count = 0;
+    int max_retries = 3;
 
     curl_global_init(CURL_GLOBAL_ALL);
-    curl = curl_easy_init();
-    if(curl) {
-        json_object *jobj = json_object_new_object();
-        json_object *jmessageContent = json_object_new_object();
+    do {
+        curl = curl_easy_init();
+        if(curl) {
+            json_object *jobj = json_object_new_object();
+            json_object *jmessageContent = json_object_new_object();
 
-        json_object_object_add(jmessageContent, "t", json_object_new_string(timestamp));
-        json_object_object_add(jmessageContent, "stNum", json_object_new_int(stNum));
-        json_object_object_add(jmessageContent, "allData", json_object_new_string(allData));
+            json_object_object_add(jmessageContent, "t", json_object_new_string(timestamp));
+            json_object_object_add(jmessageContent, "stNum", json_object_new_int(stNum));
+            json_object_object_add(jmessageContent, "allData", json_object_new_string(allData));
 
-        json_object_object_add(jobj, "id", json_object_new_string("IPP_PubMessage"));
-        json_object_object_add(jobj, "messageType", json_object_new_string(update_status));
-        json_object_object_add(jobj, "messageContent", jmessageContent);
+            json_object_object_add(jobj, "id", json_object_new_string("IPP_PubMessage"));
+            json_object_object_add(jobj, "messageType", json_object_new_string(update_status));
+            json_object_object_add(jobj, "messageContent", jmessageContent);
 
-        const char *json_data = json_object_to_json_string(jobj);
-        curl_easy_setopt(curl, CURLOPT_URL, "http://192.168.37.142:3000/update");
-        curl_easy_setopt(curl, CURLOPT_POSTFIELDS, json_data);
-        curl_easy_setopt(curl, CURLOPT_TIMEOUT_MS, 5000L);  // Set a short timeout
+            const char *json_data = json_object_to_json_string(jobj);
+            curl_easy_setopt(curl, CURLOPT_URL, "http://192.168.37.145:3000/update");
+            curl_easy_setopt(curl, CURLOPT_POSTFIELDS, json_data);
+            curl_easy_setopt(curl, CURLOPT_TIMEOUT_MS, 5000L);
 
-        struct curl_slist *headers = NULL;
-        headers = curl_slist_append(headers, "Content-Type: application/json");
-        curl_easy_setopt(curl, CURLOPT_HTTPHEADER, headers);
+            struct curl_slist *headers = NULL;
+            headers = curl_slist_append(headers, "Content-Type: application/json");
+            curl_easy_setopt(curl, CURLOPT_HTTPHEADER, headers);
 
-        res = curl_easy_perform(curl);
+            res = curl_easy_perform(curl);
+            if (res != CURLE_OK) {
+                log_error_with_retry("curl_easy_perform() failed", retry_count);
+                retry_count++;
+                Thread_sleep(2000 * retry_count);
+            } else {
+                retry_count = max_retries;
+            }
 
-        if(res != CURLE_OK) {
-            fprintf(stderr, "curl_easy_perform() failed: %s\n", curl_easy_strerror(res));
+            curl_slist_free_all(headers);
+            curl_easy_cleanup(curl);
+            json_object_put(jobj);
         }
+    } while (res != CURLE_OK && retry_count < max_retries);
 
-        curl_slist_free_all(headers);
-        curl_easy_cleanup(curl);
-        json_object_put(jobj);
-    }
     curl_global_cleanup();
 }
 
@@ -139,77 +151,73 @@ size_t write_callback(void *ptr, size_t size, size_t nmemb, void *stream) {
 void publish(GoosePublisher publisher);
 
 void* handle_update(void* arg) {
-    //GoosePublisher publisher = (GoosePublisher)arg; // Cast the argument to GoosePublisher
     char json_data[4024];
     bool statusBool = (ipp_status == 1);
 
-    // Simulate the delay
     Thread_sleep(5000); // Sleep for 5 seconds
 
-    // Prepare JSON data for the POST request
     snprintf(json_data, sizeof(json_data),
              "{\"id\": \"IPP_ValidationMessage\", \"subscribedContent\": {\"t\": \"%s\", \"stNum\": %u, \"allData\": \"%s\"}, \"publishedContent\": {\"t\": \"%s\", \"stNum\": %u, \"allData\": \"%s\"}}",
-             api_timestamp_str, subscribed_stNum, subscribed_data,
+             api_timestamp_str, subscribed_stNum, api_subscribed_data,
              published_timestamp_str, stNum, statusBool ? "TRUE" : "FALSE");
-    
-    // Send the POST request and get the response
+
     CURL *curl;
     CURLcode res;
+    int retry_count = 0;
+    int max_retries = 3;
+
     curl_global_init(CURL_GLOBAL_DEFAULT);
-    curl = curl_easy_init();
-    if(curl) {
-        struct curl_slist *headers = NULL;
-        headers = curl_slist_append(headers, "Content-Type: application/json");
-        
-        curl_easy_setopt(curl, CURLOPT_URL, "http://192.168.37.142:3000/respond");
-        curl_easy_setopt(curl, CURLOPT_POSTFIELDS, json_data);
-        curl_easy_setopt(curl, CURLOPT_HTTPHEADER, headers);
-        
-        char response_buffer[1024] = {0}; // Initialize response_buffer to empty
-        curl_easy_setopt(curl, CURLOPT_WRITEDATA, response_buffer);
-        curl_easy_setopt(curl, CURLOPT_WRITEFUNCTION, write_callback); // Use a callback function to write response data
+    do {
+        curl = curl_easy_init();
+        if(curl) {
+            struct curl_slist *headers = NULL;
+            headers = curl_slist_append(headers, "Content-Type: application/json");
 
-        res = curl_easy_perform(curl);
-        curl_slist_free_all(headers);
-        curl_easy_cleanup(curl);
+            curl_easy_setopt(curl, CURLOPT_URL, "http://192.168.37.145:3000/respond");
+            curl_easy_setopt(curl, CURLOPT_POSTFIELDS, json_data);
+            curl_easy_setopt(curl, CURLOPT_HTTPHEADER, headers);
 
-        if(res == CURLE_OK) {
-            printf("%s\n", response_buffer); // Print the response   
-        } else {
-            fprintf(stderr, "curl_easy_perform() failed: %s\n", curl_easy_strerror(res));
-            // Handle the error appropriately in your application
+            char response_buffer[1024] = {0};
+            curl_easy_setopt(curl, CURLOPT_WRITEDATA, response_buffer);
+            curl_easy_setopt(curl, CURLOPT_WRITEFUNCTION, write_callback);
+
+            res = curl_easy_perform(curl);
+            if (res != CURLE_OK) {
+                log_error_with_retry("curl_easy_perform() failed", retry_count);
+                retry_count++;
+                Thread_sleep(2000 * retry_count);
+            } else {
+                printf("%s\n", response_buffer);
+                retry_count = max_retries;
+            }
+
+            curl_slist_free_all(headers);
+            curl_easy_cleanup(curl);
+
+            if (strcmp(response_buffer, "Result: Invalid") == 0) {
+                pthread_mutex_lock(&lock);
+
+                stNum++;
+                sqNum = 0;
+
+                ipp_status = !ipp_status;
+                statusBool = (ipp_status == 1);
+
+                subscribed_stNum = previous_subscribed_stNum;
+
+                pthread_mutex_unlock(&lock);
+
+                publish(global_publisher);
+
+                api_update(published_timestamp_str, stNum, statusBool ? "TRUE" : "FALSE", "Corrective");
+            }
         }
-        
-        curl_global_cleanup();
+    } while (res != CURLE_OK && retry_count < max_retries);
 
-        // Handle the API response
-        if (strcmp(response_buffer, "Result: Invalid") == 0) {
-            // Lock the mutex to ensure thread-safe access to shared variables
-            pthread_mutex_lock(&lock);
-
-            // Increment stNum and reset sqNum
-            stNum++;
-            sqNum = 0;
-
-            // Reverse the IPP status
-            ipp_status = !ipp_status;
-            statusBool = (ipp_status == 1);
-
-            // Unlock the mutex
-            pthread_mutex_unlock(&lock);
-
-            // Publish the new GOOSE message with the updated status
-            publish(global_publisher);
-
-            // Make the corrective action API update call
-            api_update(published_timestamp_str, stNum, statusBool ? "TRUE" : "FALSE", "Corrective");
-        }
-
-    }
+    curl_global_cleanup();
 
     return NULL;
 }
-
 
 // Listener for GOOSE messages
 void gooseListener(GooseSubscriber subscriber, void *parameter) {
@@ -222,33 +230,35 @@ void gooseListener(GooseSubscriber subscriber, void *parameter) {
 
     formatUtcTime(subscribed_timestamp_str, sizeof(subscribed_timestamp_str), GooseSubscriber_getTimestamp(subscriber));
 
-    if (subscribed_stNum != GooseSubscriber_getStNum(subscriber)){
+    if (subscribed_stNum < GooseSubscriber_getStNum(subscriber)){
+        previous_subscribed_stNum = subscribed_stNum;
         subscribed_stNum = GooseSubscriber_getStNum(subscriber);
         update = 1;
         memcpy(api_timestamp_str, subscribed_timestamp_str, sizeof(subscribed_timestamp_str));
         stNum++;
         sqNum = 0;
-    }
-    MmsValue *values = GooseSubscriber_getDataSetValues(subscriber);
-    MmsValue_printToBuffer(values, subscribed_data, sizeof(subscribed_data));
-    // Update subscribed_data with a boolean value
-    size_t length = strlen(subscribed_data);
-    if (length == 6) {
-        strcpy(subscribed_data, "TRUE");
-        ipp_status = 0;
-    } else {
-        strcpy(subscribed_data, "FALSE");
-        ipp_status = 1;
-    }
+        MmsValue *values = GooseSubscriber_getDataSetValues(subscriber);
+        MmsValue_printToBuffer(values, subscribed_data, sizeof(subscribed_data));
+        size_t length = strlen(subscribed_data);
+        if (length == 6) {
+            strcpy(subscribed_data, "TRUE");
+            ipp_status = 0;
+        } else {
+            strcpy(subscribed_data, "FALSE");
+            ipp_status = 1;
+        }
+        memcpy(api_subscribed_data, subscribed_data, sizeof(subscribed_data));
 
-//     printf("{\n"
-//            "\"t\": \"%s\",\n"
-//            "\"stNum\": %u,\n"
-//            "\"allData\": %s\n"
-//            "}\n",
-//            subscribed_timestamp_str,
-//            subscribed_stNum,
-//            subscribed_data);
+        printf("Previously Subscribed: %u\nCurrently Subscribed: %u\n", previous_subscribed_stNum, subscribed_stNum);
+        printf("{\n"
+           "\"t\": \"%s\",\n"
+           "\"stNum\": %u,\n"
+           "\"allData\": %s\n"
+           "}\n",
+           subscribed_timestamp_str,
+           subscribed_stNum,
+           subscribed_data);
+    }
 }
 
 // GOOSE publisher function
@@ -260,7 +270,6 @@ void publish(GoosePublisher publisher) {
     GoosePublisher_setStNum(publisher, stNum);
     GoosePublisher_setSqNum(publisher, sqNum++);
 
-    // Generate the current timestamp and set it for the publisher
     uint64_t currentTime = Hal_getTimeInMs();
     GoosePublisher_setTimestamp(publisher, currentTime);
 
@@ -268,16 +277,6 @@ void publish(GoosePublisher publisher) {
 
     if (GoosePublisher_publish(publisher, dataSetValues) == -1) {
         log_error("Error sending GOOSE message");
-    } else {
-        /* log_debug("GOOSE message sent successfully:\
-        \n{\n"
-           "\"t\": \"%s\",\n"
-           "\"stNum\": %u,\n"
-           "\"allData\": %s\n"
-           "}\n",
-           published_timestamp_str,
-           stNum,
-           statusBool ? "TRUE" : "FALSE");*/
     }
 
     if (update) {
@@ -303,8 +302,19 @@ int main(int argc, char **argv) {
     log_info("Using interface %s", interface);
 
     GooseReceiver receiver = GooseReceiver_create();
+    if (receiver == NULL) {
+        log_error("Failed to create GooseReceiver");
+        return EXIT_FAILURE;
+    }
+
     GooseReceiver_setInterfaceId(receiver, interface);
     GooseSubscriber subscriber = GooseSubscriber_create(goID, NULL);
+    if (subscriber == NULL) {
+        log_error("Failed to create GooseSubscriber");
+        GooseReceiver_destroy(receiver);
+        return EXIT_FAILURE;
+    }
+
     uint8_t dstMac[6] = {0x01, 0x0c, 0xcd, 0x01, 0x00, 0x01};
     GooseSubscriber_setDstMac(subscriber, dstMac);
     GooseSubscriber_setAppId(subscriber, 1000);
@@ -316,6 +326,15 @@ int main(int argc, char **argv) {
     gooseCommParameters.appId = 1000;
     memcpy(gooseCommParameters.dstAddress, dstMac, 6);
     GoosePublisher publisher = GoosePublisher_create(&gooseCommParameters, interface);
+    
+    if (publisher == NULL) {
+        log_error("Failed to create GoosePublisher");
+        GooseReceiver_stop(receiver);
+        GooseReceiver_destroy(receiver);
+        GooseSubscriber_destroy(subscriber);
+        return EXIT_FAILURE;
+    }
+
     GoosePublisher_setGoCbRef(publisher, gocbRef);
     GoosePublisher_setConfRev(publisher, 1);
     GoosePublisher_setDataSetRef(publisher, datSet);
@@ -328,16 +347,16 @@ int main(int argc, char **argv) {
     GoosePublisher_setConfRev(publisher, 1);
 
     while (running) {
-        pthread_mutex_lock(&lock); // Lock the mutex
+        pthread_mutex_lock(&lock);
         publish(publisher);
-        pthread_mutex_unlock(&lock); // Unlock the mutex
-        Thread_sleep(5000); // Sleep for 5 seconds
+        pthread_mutex_unlock(&lock);
+        Thread_sleep(5000);
     }
 
     GoosePublisher_destroy(publisher);
     GooseReceiver_stop(receiver);
     GooseReceiver_destroy(receiver);
-    pthread_mutex_destroy(&lock); // Destroy the mutex
+    pthread_mutex_destroy(&lock);
     log_info("Application terminated gracefully");
 
     return 0;
