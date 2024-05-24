@@ -249,7 +249,7 @@ void gooseListener(GooseSubscriber subscriber, void *parameter) {
         }
         memcpy(api_subscribed_data, subscribed_data, sizeof(subscribed_data));
 
-        //printf("Previously Subscribed: %u\nCurrently Subscribed: %u\n", previous_subscribed_stNum, subscribed_stNum);
+        printf("Previously Subscribed: %u\nCurrently Subscribed: %u\n", previous_subscribed_stNum, subscribed_stNum);
         printf("{\n"
            "\"t\": \"%s\",\n"
            "\"stNum\": %u,\n"
