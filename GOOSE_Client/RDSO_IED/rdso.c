@@ -39,6 +39,10 @@ static void sigint_handler(int signalId) {
     running = 0;
 }
 
+void log_error_with_retry(const char *message, int retry_count) {
+    fprintf(stderr, "%s Retry count: %d\n", message, retry_count);
+}
+
 void formatUtcTime(char* buffer, size_t buffer_size, uint64_t epoch_ms) {
     time_t rawtime = epoch_ms / 1000;
     struct tm * ptm = gmtime(&rawtime);
@@ -55,44 +59,50 @@ void formatUtcTime(char* buffer, size_t buffer_size, uint64_t epoch_ms) {
 void api_update(const char* timestamp, uint32_t stNum, const char* allData) {
     CURL *curl;
     CURLcode res;
+    int retry_count = 0;
+    int max_retries = 3;
 
     curl_global_init(CURL_GLOBAL_ALL);
-    curl = curl_easy_init();
-    if(curl) {
-        json_object *jobj = json_object_new_object();
-        json_object *jmessageContent = json_object_new_object();
+    do {
+        curl = curl_easy_init();
+        if(curl) {
+            json_object *jobj = json_object_new_object();
+            json_object *jmessageContent = json_object_new_object();
 
-        json_object_object_add(jmessageContent, "t", json_object_new_string(timestamp));
-        json_object_object_add(jmessageContent, "stNum", json_object_new_int(stNum));
-        json_object_object_add(jmessageContent, "allData", json_object_new_string(allData));
+            json_object_object_add(jmessageContent, "t", json_object_new_string(timestamp));
+            json_object_object_add(jmessageContent, "stNum", json_object_new_int(stNum));
+            json_object_object_add(jmessageContent, "allData", json_object_new_string(allData));
 
-        json_object_object_add(jobj, "id", json_object_new_string("RDSO_PubMessage"));
-        json_object_object_add(jobj, "messageType", json_object_new_string(update_status));
-        json_object_object_add(jobj, "messageContent", jmessageContent);
+            json_object_object_add(jobj, "id", json_object_new_string("RDSO_PubMessage"));
+            json_object_object_add(jobj, "messageType", json_object_new_string(update_status));
+            json_object_object_add(jobj, "messageContent", jmessageContent);
 
-        const char *json_data = json_object_to_json_string(jobj);
+            const char *json_data = json_object_to_json_string(jobj);
+            curl_easy_setopt(curl, CURLOPT_URL, "http://192.168.37.139:3000/enqueue/update");
+            curl_easy_setopt(curl, CURLOPT_POSTFIELDS, json_data);
+            curl_easy_setopt(curl, CURLOPT_TIMEOUT_MS, 5000L);  // Set a short timeout
 
-        curl_easy_setopt(curl, CURLOPT_URL, "http://192.168.37.139:3000/enqueue/update");
-        curl_easy_setopt(curl, CURLOPT_POSTFIELDS, json_data);
-        curl_easy_setopt(curl, CURLOPT_TIMEOUT_MS, 5000L);  // Set a short timeout
+            struct curl_slist *headers = NULL;
+            headers = curl_slist_append(headers, "Content-Type: application/json");
+            curl_easy_setopt(curl, CURLOPT_HTTPHEADER, headers);
 
-        struct curl_slist *headers = NULL;
-        headers = curl_slist_append(headers, "Content-Type: application/json");
-        curl_easy_setopt(curl, CURLOPT_HTTPHEADER, headers);
+            res = curl_easy_perform(curl);
+            if (res != CURLE_OK) {
+                log_error_with_retry("curl_easy_perform() failed", retry_count);
+                retry_count++;
+                Thread_sleep(2000 * retry_count); // Exponential backoff
+            } else {
+                retry_count = max_retries; // Exit the loop if successful
+            }
 
-        res = curl_easy_perform(curl);
-
-        if(res != CURLE_OK) {
-            fprintf(stderr, "curl_easy_perform() failed: %s\n", curl_easy_strerror(res));
+            curl_slist_free_all(headers);
+            curl_easy_cleanup(curl);
+            json_object_put(jobj);
         }
+    } while (res != CURLE_OK && retry_count < max_retries);
 
-        curl_slist_free_all(headers);
-        curl_easy_cleanup(curl);
-        json_object_put(jobj);
-    }
     curl_global_cleanup();
 }
-
 void* handle_update(void* arg) {
     api_update(published_timestamp_str, stNum, statusBool ? "TRUE" : "FALSE");
     return NULL;
@@ -116,21 +126,8 @@ void publish(GoosePublisher publisher) {
         pthread_create(&update_thread, NULL, handle_update, NULL);
         pthread_detach(update_thread); // Automatically reclaim thread resources when done
     }
-
     if (GoosePublisher_publish(publisher, dataSetValues) == -1) {
         log_error("Error sending GOOSE message");
-    } else {
-        /*log_debug("GOOSE message sent successfully:\
-        \n{\n"
-           "\"t\": \"%s\",\n"
-           "\"stNum\": %u,\n"
-           "\"sqNum\": %u,\n"
-           "\"allData\": %s\n"
-           "}\n",
-           published_timestamp_str,
-           stNum,
-           sqNum,
-           statusBool ? "TRUE" : "FALSE");*/
     }
 
     LinkedList_destroyDeep(dataSetValues, (LinkedListValueDeleteFunction)MmsValue_delete);
@@ -177,8 +174,19 @@ int main(int argc, char **argv) {
     log_info("Using interface %s", interface);
 
     GooseReceiver receiver = GooseReceiver_create();
+    if (receiver == NULL) {
+        log_error("Failed to create GooseReceiver");
+        return EXIT_FAILURE;
+    }
+
     GooseReceiver_setInterfaceId(receiver, interface);
     GooseSubscriber subscriber = GooseSubscriber_create(goID, NULL);
+    if (subscriber == NULL) {
+        log_error("Failed to create GooseSubscriber");
+        GooseReceiver_destroy(receiver);
+        return EXIT_FAILURE;
+    }
+
     uint8_t dstMac[6] = {0x01, 0x0c, 0xcd, 0x01, 0x00, 0x01};
     GooseSubscriber_setDstMac(subscriber, dstMac);
     GooseSubscriber_setAppId(subscriber, 1000);
@@ -190,6 +198,14 @@ int main(int argc, char **argv) {
     gooseCommParameters.appId = 1000;
     memcpy(gooseCommParameters.dstAddress, dstMac, 6);
     GoosePublisher publisher = GoosePublisher_create(&gooseCommParameters, interface);
+    if (publisher == NULL) {
+        log_error("Failed to create GoosePublisher");
+        GooseReceiver_stop(receiver);
+        GooseReceiver_destroy(receiver);
+        GooseSubscriber_destroy(subscriber);
+        return EXIT_FAILURE;
+    }
+
     GoosePublisher_setGoCbRef(publisher, gocbRef);
     GoosePublisher_setConfRev(publisher, 1);
     GoosePublisher_setDataSetRef(publisher, datSet);
