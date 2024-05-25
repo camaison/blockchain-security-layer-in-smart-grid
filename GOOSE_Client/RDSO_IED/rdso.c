@@ -1,3 +1,5 @@
+#define _POSIX_C_SOURCE 199309L  // Add this line at the top
+
 #include <stdint.h>
 #include <stdlib.h>
 #include <string.h>
@@ -61,6 +63,10 @@ void api_update(const char* timestamp, uint32_t stNum, const char* allData) {
     CURLcode res;
     int retry_count = 0;
     int max_retries = 3;
+    struct timespec start, end;
+
+    // Record start time
+    clock_gettime(CLOCK_REALTIME, &start);
 
     curl_global_init(CURL_GLOBAL_ALL);
     do {
@@ -78,7 +84,7 @@ void api_update(const char* timestamp, uint32_t stNum, const char* allData) {
             json_object_object_add(jobj, "messageContent", jmessageContent);
 
             const char *json_data = json_object_to_json_string(jobj);
-            curl_easy_setopt(curl, CURLOPT_URL, "http://192.168.37.139:3000/enqueue/update");
+            curl_easy_setopt(curl, CURLOPT_URL, "http://192.168.37.139:3000/update");
             curl_easy_setopt(curl, CURLOPT_POSTFIELDS, json_data);
             curl_easy_setopt(curl, CURLOPT_TIMEOUT_MS, 5000L);  // Set a short timeout
 
@@ -102,7 +108,15 @@ void api_update(const char* timestamp, uint32_t stNum, const char* allData) {
     } while (res != CURLE_OK && retry_count < max_retries);
 
     curl_global_cleanup();
+
+    // Record end time
+    clock_gettime(CLOCK_REALTIME, &end);
+
+    // Calculate time difference
+    double time_spent = (end.tv_sec - start.tv_sec) + (end.tv_nsec - start.tv_nsec) / 1e9;
+    printf("Time taken for /update call: %.9f seconds\n", time_spent);
 }
+
 void* handle_update(void* arg) {
     api_update(published_timestamp_str, stNum, statusBool ? "TRUE" : "FALSE");
     return NULL;
