@@ -1,37 +1,4 @@
-# LIBIEC_HOME=../libiec61850
-
-# PROJECT_BINARY_NAME = ipp
-# PROJECT_SOURCES = ipp.c logging.c  # Include logging.c here
-
-# CC=gcc
-
-# # Include directories for libiec61850 and potentially for other includes
-# INCLUDES=-I$(LIBIEC_HOME)/include -I./  # Assuming logging.h is in the current directory
-
-# # Library paths and names for libiec61850
-# LDLIBS=-L$(LIBIEC_HOME)/lib -liec61850 -lpthread  # Including pthread if needed
-
-# # Compiler flags, add any additional flags if needed
-# CFLAGS=-Wall -std=c99
-
-# # Linker flags, add any additional flags if needed
-# LDFLAGS=
-
-# include $(LIBIEC_HOME)/make/target_system.mk
-# include $(LIBIEC_HOME)/make/stack_includes.mk
-
-# all: $(PROJECT_BINARY_NAME)
-
-# include $(LIBIEC_HOME)/make/common_targets.mk
-
-# $(PROJECT_BINARY_NAME): $(PROJECT_SOURCES) $(LIB_NAME)
-# 	$(CC) $(CFLAGS) $(LDFLAGS) -o $(PROJECT_BINARY_NAME) $(PROJECT_SOURCES) $(INCLUDES) $(LIB_NAME) $(LDLIBS) -lcurl
-
-# clean:
-# 	rm -f $(PROJECT_BINARY_NAME)
-
-
-LIBIEC_HOME=../libiec61850
+LIBIEC_HOME=../libiec61850_mod
 
 PROJECT_BINARY_NAME = ipp
 PROJECT_SOURCES = ipp.c logging.c  # Added logging.c here
