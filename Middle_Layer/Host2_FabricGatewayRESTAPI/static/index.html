@@ -1,32 +1,91 @@
 <!DOCTYPE html>
-<html lang="en">
+<html>
 <head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>WebSocket Test</title>
+    <title>Live Smart Grid Downtime Graph</title>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            background-color: #f4f4f4;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            height: 100vh;
+            margin: 0;
+        }
+        h1 {
+            color: #333;
+        }
+        #timeSpentChart {
+            max-width: 80%;
+            margin: 20px;
+        }
+        .average-container {
+            font-size: 1.2em;
+            color: #555;
+        }
+    </style>
 </head>
 <body>
-    <h1>WebSocket Test</h1>
-    <pre id="data"></pre>
+    <h1>Live Smart Grid Downtime Graph</h1>
+    <canvas id="downTimeChart"></canvas>
+    <div class="average-container">
+        <p>Average Time Spent: <span id="averageDownTime">Calculating...</span> seconds</p>
+    </div>
 
     <script>
-        const ws = new WebSocket('ws://192.168.37.142:3000/ws');
+        var timeSpentValues = [];
+        var ctx = document.getElementById('downTimeChart').getContext('2d');
+        var timeSpentChart = new Chart(ctx, {
+            type: 'line',
+            data: {
+                labels: [],
+                datasets: [{
+                    label: 'Downtime (seconds)',
+                    data: [],
+                    borderWidth: 2,
+                    borderColor: 'rgba(75, 192, 192, 1)',
+                    backgroundColor: 'rgba(75, 192, 192, 0.2)',
+                    fill: true,
+                    tension: 0.1
+                }]
+            },
+            options: {
+                responsive: true,
+                scales: {
+                    y: {
+                        beginAtZero: true,
+                        title: {
+                            display: true,
+                            text: 'Downtime (seconds)'
+                        }
+                    },
+                    x: {
+                        title: {
+                            display: true,
+                            text: 'Index'
+                        }
+                    }
+                }
+            }
+        });
 
-        ws.onopen = () => {
-            console.log('Connected to WebSocket server');
-        };
+        var socket = new WebSocket('ws://192.168.37.145:3000/ws');
+        socket.onmessage = function(event) {
+            var data = JSON.parse(event.data);
+            var timeSpent = data.timeSpent+5;
 
-        ws.onmessage = (event) => {
-            const data = JSON.parse(event.data);
-            document.getElementById('data').textContent = JSON.stringify(data, null, 2);
-        };
+            // Update the chart
+            timeSpentValues.push(timeSpent);
+            timeSpentChart.data.labels.push(timeSpentValues.length);
+            timeSpentChart.data.datasets[0].data.push(timeSpent);
+            timeSpentChart.update();
 
-        ws.onerror = (error) => {
-            console.error('WebSocket error:', error);
-        };
-
-        ws.onclose = () => {
-            console.log('WebSocket connection closed');
+            // Calculate the average
+            var total = timeSpentValues.reduce((acc, value) => acc + value, 0);
+            var average = total / timeSpentValues.length;
+            document.getElementById('averageDownTime').innerText = average.toFixed(2);
         };
     </script>
 </body>

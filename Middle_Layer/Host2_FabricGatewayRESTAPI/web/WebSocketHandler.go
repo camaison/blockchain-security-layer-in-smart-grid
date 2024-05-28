@@ -1,15 +1,19 @@
 package web
 
 import (
-	"encoding/json"
-	"net/http"
-	"log"
-	"fmt"
+    "encoding/json"
+    "log"
+    "net/http"
+    "sync"
 
-	"github.com/gorilla/websocket" 
+    "github.com/gorilla/websocket"
 )
 
-// WebSocket handler for real-time updates
+var (
+    clients = make(map[*websocket.Conn]bool)
+    clientsMutex sync.Mutex
+)
+
 func (setup *OrgSetup) handleWebSocket(w http.ResponseWriter, r *http.Request) {
     conn, err := upgrader.Upgrade(w, r, nil)
     if err != nil {
@@ -34,41 +38,25 @@ func (setup *OrgSetup) handleWebSocket(w http.ResponseWriter, r *http.Request) {
     }
 }
 
-func broadcastUpdate(data interface{}) {
+func broadcastTimeSpent(timeSpent float64) {
     clientsMutex.Lock()
     defer clientsMutex.Unlock()
 
-    responseData, err := json.Marshal(data)
+    data := map[string]interface{}{
+        "timeSpent": timeSpent,
+    }
+    message, err := json.Marshal(data)
     if err != nil {
         log.Println("JSON Marshal error:", err)
         return
     }
 
     for client := range clients {
-        err := client.WriteMessage(websocket.TextMessage, responseData)
+        err := client.WriteMessage(websocket.TextMessage, message)
         if err != nil {
             log.Println("Write error:", err)
             client.Close()
             delete(clients, client)
         }
     }
-}
-
-func (setup *OrgSetup) getAllData() (map[string]interface{}, error) {
-    network := setup.Gateway.GetNetwork(setup.Channel)
-    contract := network.GetContract(setup.Chaincode)
-
-    // Evaluate transaction using the GetAllData function from chaincode
-    result, err := contract.EvaluateTransaction("GetAllData")
-    if err != nil {
-        return nil, fmt.Errorf("Error querying GetAllData: %s", err)
-    }
-
-    // Prepare the response to return JSON data
-    var data map[string]interface{}
-    if err := json.Unmarshal(result, &data); err != nil {
-        return nil, fmt.Errorf("Error unmarshaling JSON data: %s", err)
-    }
-
-    return data, nil
 }

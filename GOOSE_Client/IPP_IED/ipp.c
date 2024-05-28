@@ -1,3 +1,5 @@
+#define _POSIX_C_SOURCE 199309L  // Add this line at the top
+
 #include <stdio.h>
 #include <stdlib.h>
 #include <signal.h>
@@ -30,7 +32,7 @@ static char published_timestamp_str[64]; // Global variable for the timestamp st
 static uint32_t subscribed_stNum = 0;
 static char subscribed_data[1024] = "FALSE";
 static GoosePublisher global_publisher;
-static uint32_t previous_subscribed_stNum = 0; //THe stnum before the status update to be validated. subscribed stnum is reverted to this if the action is invalid
+static uint32_t previous_subscribed_stNum = 0; // The stnum before the status update to be validated. subscribed stnum is reverted to this if the action is invalid
 
 pthread_mutex_t lock; // Mutex for protecting shared variables
 
@@ -154,6 +156,11 @@ void* handle_update(void* arg) {
     char json_data[4024];
     bool statusBool = (ipp_status == 1);
 
+    struct timespec start, end;
+
+    // Record start time
+    clock_gettime(CLOCK_REALTIME, &start);
+
     Thread_sleep(5000); // Sleep for 5 seconds
 
     snprintf(json_data, sizeof(json_data),
@@ -193,6 +200,13 @@ void* handle_update(void* arg) {
 
             curl_slist_free_all(headers);
             curl_easy_cleanup(curl);
+
+            // Record end time
+            clock_gettime(CLOCK_REALTIME, &end);
+
+            // Calculate time difference
+            double time_spent = (end.tv_sec - start.tv_sec) + (end.tv_nsec - start.tv_nsec) / 1e9;
+            printf("Time taken for /respond call: %.9f seconds\n", time_spent);
 
             if (strcmp(response_buffer, "Result: Invalid") == 0) {
                 pthread_mutex_lock(&lock);

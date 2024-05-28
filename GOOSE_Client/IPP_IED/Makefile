@@ -58,7 +58,7 @@ all: $(PROJECT_BINARY_NAME)
 include $(LIBIEC_HOME)/make/common_targets.mk
 
 $(PROJECT_BINARY_NAME): $(PROJECT_SOURCES) $(LIB_NAME)
-	$(CC) $(CFLAGS) $(LDFLAGS) -o $(PROJECT_BINARY_NAME) $(PROJECT_SOURCES) $(INCLUDES) $(LIB_NAME) $(LDLIBS) -lcurl -ljson-c
+	$(CC) $(CFLAGS) $(LDFLAGS) -o $(PROJECT_BINARY_NAME) $(PROJECT_SOURCES) $(INCLUDES) $(LIB_NAME) $(LDLIBS) -lcurl -ljson-c -lwebsockets
 
 clean:
 	rm -f $(PROJECT_BINARY_NAME)

@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
+    "time"
 )
 
 // RespondToMessage godoc
@@ -18,14 +19,18 @@ import (
 // @Success 200 {string} string "Response Updated"
 // @Failure 400 {string} string "Error occurred"
 // @Router /respond [post]
+
 func (setup *OrgSetup) RespondToMessage(w http.ResponseWriter, r *http.Request) {
     fmt.Println("Received RespondToMessage request")
 
+    // Start timing
+    start := time.Now()
+
     // Define a structure to match expected JSON payload
     type Request struct {
-        ID               string                 `json:"id"`
+        ID                string                 `json:"id"`
         SubscribedContent map[string]interface{} `json:"subscribedContent"`
-        PublishedContent map[string]interface{} `json:"publishedContent"`
+        PublishedContent  map[string]interface{} `json:"publishedContent"`
     }
 
     var requestData Request
@@ -57,5 +62,13 @@ func (setup *OrgSetup) RespondToMessage(w http.ResponseWriter, r *http.Request) 
         return
     }
 
+    // Calculate time spent
+    end := time.Now()
+    timeSpent := end.Sub(start).Seconds()
+
+    // Broadcast the time spent
+    broadcastTimeSpent(timeSpent)
+
     fmt.Fprintf(w, "Result: %s", result)
 }
+
