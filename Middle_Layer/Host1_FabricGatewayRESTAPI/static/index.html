@@ -1,33 +1,170 @@
 <!DOCTYPE html>
-<html lang="en">
+<html>
 <head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>WebSocket Test</title>
+    <title>RDSO LIVE Update Message Delay Graphs</title>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            background-color: #f4f4f4;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            height: 100vh;
+            margin: 0;
+        }
+        h1 {
+            color: #333;
+        }
+        .chart-grid {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 20px;
+            width: 80%;
+        }
+        .chart-container {
+            position: relative;
+            width: 100%;
+            padding-top: 50%; /* Aspect ratio of 2:1 */
+        }
+        .chart-container canvas {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+        }
+        .average-container {
+            font-size: 1.2em;
+            color: #555;
+            text-align: center;
+            margin-top: -20px;
+        }
+    </style>
 </head>
 <body>
-    <h1>WebSocket Test</h1>
-    <pre id="data"></pre>
+    <h1>Real-Time RDSO Update Delay Graphs</h1>
+    <div class="chart-grid">
+        <div>
+            <div class="chart-container">
+                <canvas id="proposalEndorsementChart"></canvas>
+            </div>
+            <div class="average-container">
+                <p>Average Proposal Endorsement Time: <span id="averageProposalEndorsement">Calculating...</span> ms</p>
+            </div>
+        </div>
+        <div>
+            <div class="chart-container">
+                <canvas id="transactionEndorsementChart"></canvas>
+            </div>
+            <div class="average-container">
+                <p>Average Transaction Endorsement Time: <span id="averageTransactionEndorsement">Calculating...</span> ms</p>
+            </div>
+        </div>
+        <div>
+            <div class="chart-container">
+                <canvas id="submissionChart"></canvas>
+            </div>
+            <div class="average-container">
+                <p>Average Submission Time: <span id="averageSubmission">Calculating...</span> ms</p>
+            </div>
+        </div>
+        <div>
+            <div class="chart-container">
+                <canvas id="commitmentChart"></canvas>
+            </div>
+            <div class="average-container">
+                <p>Average Commitment Time: <span id="averageCommitment">Calculating...</span> ms</p>
+            </div>
+        </div>
+        <div>
+            <div class="chart-container">
+                <canvas id="endChart"></canvas>
+            </div>
+            <div class="average-container">
+                <p>Average Total Time: <span id="averageend">Calculating...</span> ms</p>
+            </div>
+        </div>
+
+    </div>
 
     <script>
-        const ws = new WebSocket('ws://192.168.37.139:3000/ws');
+        var proposalEndorsementValues = [];
+        var transactionEndorsementValues = [];
+        var submissionValues = [];
+        var commitmentValues = [];
+        var endValues = [];
 
-        ws.onopen = () => {
-            console.log('Connected to WebSocket server');
+        function createChart(ctx, label) {
+            return new Chart(ctx, {
+                type: 'line',
+                data: {
+                    labels: [],
+                    datasets: [{
+                        label: label,
+                        data: [],
+                        borderWidth: 2,
+                        borderColor: 'rgba(75, 192, 192, 1)',
+                        backgroundColor: 'rgba(75, 192, 192, 0.2)',
+                        fill: true,
+                        tension: 0.1
+                    }]
+                },
+                options: {
+                    responsive: true,
+                    scales: {
+                        y: {
+                            beginAtZero: true,
+                            title: {
+                                display: true,
+                                text: label + ' (ms)'
+                            }
+                        },
+                        x: {
+                            title: {
+                                display: true,
+                                text: 'Index'
+                            }
+                        }
+                    }
+                }
+            });
+        }
+
+        var proposalEndorsementChart = createChart(document.getElementById('proposalEndorsementChart').getContext('2d'), 'Proposal Endorsement Time');
+        var transactionEndorsementChart = createChart(document.getElementById('transactionEndorsementChart').getContext('2d'), 'Transaction Endorsement Time');
+        var submissionChart = createChart(document.getElementById('submissionChart').getContext('2d'), 'Submission Time');
+        var commitmentChart = createChart(document.getElementById('commitmentChart').getContext('2d'), 'Commitment Time');
+        var endChart = createChart(document.getElementById('endChart').getContext('2d'), 'Total Time');
+
+        var socket = new WebSocket('ws://192.168.37.139:3000/ws');
+        socket.onmessage = function(event) {
+            var data = JSON.parse(event.data);
+
+            var proposalEndorsement = data.proposal_endorsement_time * 1000; // Convert to milliseconds
+            var transactionEndorsement = data.transaction_endorsement_time * 1000; // Convert to milliseconds
+            var submission = data.submission_time * 1000; // Convert to milliseconds
+            var commitment = data.commitment_time * 1000; // Convert to milliseconds
+            var end = data.end_time; // Convert to milliseconds
+
+            updateChart(proposalEndorsementChart, proposalEndorsementValues, proposalEndorsement, 'averageProposalEndorsement');
+            updateChart(transactionEndorsementChart, transactionEndorsementValues, transactionEndorsement, 'averageTransactionEndorsement');
+            updateChart(submissionChart, submissionValues, submission, 'averageSubmission');
+            updateChart(commitmentChart, commitmentValues, commitment, 'averageCommitment');
+            updateChart(endChart, endValues, end, 'averageTotalTime');
         };
 
-        ws.onmessage = (event) => {
-            const data = JSON.parse(event.data);
-            document.getElementById('data').textContent = JSON.stringify(data, null, 2);
-        };
+        function updateChart(chart, valuesArray, newValue, averageElementId) {
+            valuesArray.push(newValue);
+            chart.data.labels.push(valuesArray.length);
+            chart.data.datasets[0].data.push(newValue);
+            chart.update();
 
-        ws.onerror = (error) => {
-            console.error('WebSocket error:', error);
-        };
-
-        ws.onclose = () => {
-            console.log('WebSocket connection closed');
-        };
+            var total = valuesArray.reduce((acc, value) => acc + value, 0);
+            var average = total / valuesArray.length;
+            document.getElementById(averageElementId).innerText = average.toFixed(2);
+        }
     </script>
 </body>
 </html>

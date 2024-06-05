@@ -1,4 +1,4 @@
-LIBIEC_HOME=../libiec61850
+LIBIEC_HOME=../libiec61850_mod
 
 PROJECT_BINARY_NAME = iedx
 PROJECT_SOURCES = iedx.c logging.c  # Added logging.c here

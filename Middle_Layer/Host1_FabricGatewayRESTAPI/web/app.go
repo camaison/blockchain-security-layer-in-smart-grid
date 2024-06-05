@@ -51,11 +51,6 @@ func Serve(setups OrgSetup) {
     mux.HandleFunc("/validate", setups.ValidateMessage)
     mux.HandleFunc("/history", setups.GetTxnHistory)
 
-    // Define routes for enqueue endpoints
-    mux.HandleFunc("/enqueue/update", setups.enqueueUpdateMessageHandler)
-    mux.HandleFunc("/enqueue/respond", setups.enqueueRespondToMessageHandler)
-    mux.HandleFunc("/enqueue/validate", setups.enqueueValidateMessageHandler)
-
     // Serve Swagger documentation
     mux.Handle("/swagger/", httpSwagger.WrapHandler)
 
@@ -67,9 +62,6 @@ func Serve(setups OrgSetup) {
 
     // Wrap the mux with the logging middleware
     loggedMux := loggingMiddleware(mux)
-
-    // Start the queue processor in a separate goroutine
-    go processQueue(setups)
 
     fmt.Println("Listening on http://localhost:3000/ ...")
     if err := http.ListenAndServe(":3000", loggedMux); err != nil {
