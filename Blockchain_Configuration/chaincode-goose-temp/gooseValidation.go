@@ -4,7 +4,7 @@ import (
     "log"
 
     "github.com/hyperledger/fabric-contract-api-go/contractapi"
-    "temp-chaincode/chaincode"
+    "goose-temp-chaincode/chaincode"
 )
 
 func main() {

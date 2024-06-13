@@ -1,4 +1,4 @@
-module github.com/camaison/blockchain-security-layer-in-smart-grid/Blockchain_Configuration/temp-chaincode
+module goose-temp-chaincode
 
 go 1.20
 
