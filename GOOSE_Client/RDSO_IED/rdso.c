@@ -33,8 +33,8 @@ static char update_status[24] = "Standard";
 char gocbRef[100] = "RDSO/LLN0$GO$gcbAnalogValues";
 char datSet[100] = "RDSO/LLN0$AnalogValues";
 char goID[100] = "RDSO";
-char goIDListenerIPP[100] = "IPP";
-char goIDListenerX[100] = "X";
+char goIDListenerIPP[100] = "IPP/LLN0$GO$gcbAnalogValues";
+char goIDListenerX[100] = "X/LLN0$GO$gcbAnalogValues";
 
 static pthread_mutex_t lock; // Mutex for thread-safe operations
 
@@ -86,7 +86,7 @@ void api_update(const char* timestamp, uint32_t stNum, const char* allData) {
             json_object_object_add(jobj, "messageContent", jmessageContent);
 
             const char *json_data = json_object_to_json_string(jobj);
-            curl_easy_setopt(curl, CURLOPT_URL, "http://192.168.37.139:3000/update");
+            curl_easy_setopt(curl, CURLOPT_URL, "http://192.168.37.139:3001/update");
             curl_easy_setopt(curl, CURLOPT_POSTFIELDS, json_data);
             curl_easy_setopt(curl, CURLOPT_TIMEOUT_MS, 5000L);  // Set a short timeout
 
@@ -136,12 +136,13 @@ void publish(GoosePublisher publisher) {
     
     formatUtcTime(published_timestamp_str, sizeof(published_timestamp_str), currentTime);
 
-    if (update) {
-        update = 0;
-        pthread_t update_thread;
-        pthread_create(&update_thread, NULL, handle_update, NULL);
-        pthread_detach(update_thread); // Automatically reclaim thread resources when done
-    }
+    // if (update) {
+    //     update = 0;
+    //     pthread_t update_thread;
+    //     pthread_create(&update_thread, NULL, handle_update, NULL);
+    //     pthread_detach(update_thread); // Automatically reclaim thread resources when done
+    // }
+    
     if (GoosePublisher_publish(publisher, dataSetValues) == -1) {
         log_error("Error sending GOOSE message");
     }
@@ -268,7 +269,7 @@ int main(int argc, char **argv) {
             pthread_mutex_unlock(&lock); // Unlock the mutex
 
             publish(publisher);
-            Thread_sleep(5000); // Sleep for 5 seconds
+            Thread_sleep(1000); // Sleep for 5 seconds
         }
     }
 
