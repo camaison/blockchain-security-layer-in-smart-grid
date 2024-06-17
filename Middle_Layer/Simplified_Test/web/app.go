@@ -4,6 +4,7 @@ import (
     "fmt"
     "log"
     "net/http"
+    "sync"
 
     "github.com/gorilla/websocket"
     "github.com/hyperledger/fabric-gateway/pkg/client"
@@ -35,6 +36,8 @@ var upgrader = websocket.Upgrader{
     },
 }
 
+var clients = make(map[*websocket.Conn]bool)
+var clientsMutex sync.Mutex
 
 // Serve initializes and starts the HTTP server
 func Serve(setups OrgSetup) {
@@ -47,6 +50,7 @@ func Serve(setups OrgSetup) {
     mux.HandleFunc("/read", setups.ReadData)
     mux.HandleFunc("/validate", setups.ValidateMessage)
     mux.HandleFunc("/history", setups.GetTxnHistory)
+    mux.HandleFunc("/idValidate", setups.SimpValidateMessage)
 
     // Serve Swagger documentation
     mux.Handle("/swagger/", httpSwagger.WrapHandler)
@@ -60,11 +64,8 @@ func Serve(setups OrgSetup) {
     // Wrap the mux with the logging middleware
     loggedMux := loggingMiddleware(mux)
 
-    // Start the queue processor in a separate goroutine
-    //go processQueue(setups)
-
-    fmt.Println("Listening on http://localhost:3000/ ...")
-    if err := http.ListenAndServe(":3000", loggedMux); err != nil {
+    fmt.Println("Listening on http://localhost:3001/ ...")
+    if err := http.ListenAndServe(":3001", loggedMux); err != nil {
         log.Fatal("ListenAndServe Error:", err)
     }
 }
