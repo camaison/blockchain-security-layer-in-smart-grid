@@ -1,7 +1,7 @@
 <!DOCTYPE html>
 <html>
 <head>
-    <title>Live Smart Grid Downtime Graph</title>
+    <title>IPP LIVE Validation Delay Graph</title>
     <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
     <style>
         body {
@@ -28,10 +28,10 @@
     </style>
 </head>
 <body>
-    <h1>Live Smart Grid Downtime Graph</h1>
+    <h1>Real-Time IPP Validation Delay Graph</h1>
     <canvas id="downTimeChart"></canvas>
     <div class="average-container">
-        <p>Average Time Spent: <span id="averageDownTime">Calculating...</span> seconds</p>
+        <p>Average Delay: <span id="averageDownTime">Calculating...</span> seconds</p>
     </div>
 
     <script>
@@ -42,7 +42,7 @@
             data: {
                 labels: [],
                 datasets: [{
-                    label: 'Downtime (seconds)',
+                    label: 'Delay (seconds)',
                     data: [],
                     borderWidth: 2,
                     borderColor: 'rgba(75, 192, 192, 1)',
@@ -58,7 +58,7 @@
                         beginAtZero: true,
                         title: {
                             display: true,
-                            text: 'Downtime (seconds)'
+                            text: 'Validation Delay  (seconds)'
                         }
                     },
                     x: {

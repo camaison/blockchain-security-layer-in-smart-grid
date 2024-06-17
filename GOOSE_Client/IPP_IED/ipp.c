@@ -1,4 +1,4 @@
-#define _POSIX_C_SOURCE 199309L  // Add this line at the top
+#define _POSIX_C_SOURCE 199309L // Add this line at the top
 
 #include <stdio.h>
 #include <stdlib.h>
@@ -114,7 +114,7 @@ void api_update(const char* timestamp, uint32_t stNum, const char* allData, cons
             json_object_object_add(jobj, "messageContent", jmessageContent);
 
             const char *json_data = json_object_to_json_string(jobj);
-            curl_easy_setopt(curl, CURLOPT_URL, "http://192.168.37.145:3000/update");
+            curl_easy_setopt(curl, CURLOPT_URL, "http://192.168.37.139:3001/update");
             curl_easy_setopt(curl, CURLOPT_POSTFIELDS, json_data);
             curl_easy_setopt(curl, CURLOPT_TIMEOUT_MS, 5000L);
 
@@ -154,14 +154,16 @@ void publish(GoosePublisher publisher);
 
 void* handle_update(void* arg) {
     char json_data[4024];
+    char query_data[4024];
     bool statusBool = (ipp_status == 1);
 
     struct timespec start, end;
 
-    // Record start time
-    clock_gettime(CLOCK_REALTIME, &start);
+    Thread_sleep(3000); // Sleep for 3 seconds
 
-    Thread_sleep(5000); // Sleep for 5 seconds
+    snprintf(query_data, sizeof(query_data),
+             "{\"messageID\": \"RDSO_PubMessage\", \"subscribedContent\": {\"t\": \"%s\", \"stNum\": %u, \"allData\": \"%s\"}}",
+             api_timestamp_str, subscribed_stNum, api_subscribed_data);
 
     snprintf(json_data, sizeof(json_data),
              "{\"id\": \"IPP_ValidationMessage\", \"subscribedContent\": {\"t\": \"%s\", \"stNum\": %u, \"allData\": \"%s\"}, \"publishedContent\": {\"t\": \"%s\", \"stNum\": %u, \"allData\": \"%s\"}}",
@@ -172,16 +174,19 @@ void* handle_update(void* arg) {
     CURLcode res;
     int retry_count = 0;
     int max_retries = 3;
-
+    
+    // Record start time
+    clock_gettime(CLOCK_REALTIME, &start);
     curl_global_init(CURL_GLOBAL_DEFAULT);
+
     do {
         curl = curl_easy_init();
         if(curl) {
             struct curl_slist *headers = NULL;
             headers = curl_slist_append(headers, "Content-Type: application/json");
 
-            curl_easy_setopt(curl, CURLOPT_URL, "http://192.168.37.145:3000/respond");
-            curl_easy_setopt(curl, CURLOPT_POSTFIELDS, json_data);
+            curl_easy_setopt(curl, CURLOPT_URL, "http://192.168.37.139:3000/validate");
+            curl_easy_setopt(curl, CURLOPT_POSTFIELDS, query_data);
             curl_easy_setopt(curl, CURLOPT_HTTPHEADER, headers);
 
             char response_buffer[1024] = {0};
@@ -206,9 +211,9 @@ void* handle_update(void* arg) {
 
             // Calculate time difference
             double time_spent = (end.tv_sec - start.tv_sec) + (end.tv_nsec - start.tv_nsec) / 1e9;
-            printf("Time taken for /respond call: %.9f seconds\n", time_spent);
+            printf("Time taken for /validate call: %.9f seconds\n", time_spent);
 
-            if (strcmp(response_buffer, "Result: Invalid") == 0) {
+            if (strcmp(response_buffer, "false") == 10) {
                 pthread_mutex_lock(&lock);
 
                 stNum++;
@@ -222,14 +227,56 @@ void* handle_update(void* arg) {
                 pthread_mutex_unlock(&lock);
 
                 publish(global_publisher);
-
-                api_update(published_timestamp_str, stNum, statusBool ? "TRUE" : "FALSE", "Corrective");
             }
         }
     } while (res != CURLE_OK && retry_count < max_retries);
 
-    curl_global_cleanup();
+   
+   // Book Keeping Part of the Thread!!!
+    clock_gettime(CLOCK_REALTIME, &start);
+    curl_global_init(CURL_GLOBAL_DEFAULT);
+    do {
+        curl = curl_easy_init();
+        if(curl) {
+            struct curl_slist *headers = NULL;
+            headers = curl_slist_append(headers, "Content-Type: application/json");
 
+            curl_easy_setopt(curl, CURLOPT_URL, "http://192.168.37.139:3000/respond");
+            curl_easy_setopt(curl, CURLOPT_POSTFIELDS, json_data);
+            curl_easy_setopt(curl, CURLOPT_HTTPHEADER, headers);
+
+            char response_buffer[1024] = {0};
+            curl_easy_setopt(curl, CURLOPT_WRITEDATA, response_buffer);
+            curl_easy_setopt(curl, CURLOPT_WRITEFUNCTION, write_callback);
+
+            res = curl_easy_perform(curl);
+            if (res != CURLE_OK) {
+                log_error_with_retry("curl_easy_perform() failed", retry_count);
+                retry_count++;
+                Thread_sleep(2000 * retry_count);
+            } else {
+                printf("%s\n", response_buffer);
+                retry_count = max_retries;
+            }
+
+            curl_slist_free_all(headers);
+            curl_easy_cleanup(curl);
+
+
+            if (strcmp(response_buffer, "Result: Invalid") == 0) {
+                api_update(published_timestamp_str, stNum, statusBool ? "TRUE" : "FALSE", "Corrective");
+            }
+
+            // Record end time
+            clock_gettime(CLOCK_REALTIME, &end);
+
+            // Calculate time difference
+            double time_spent = (end.tv_sec - start.tv_sec) + (end.tv_nsec - start.tv_nsec) / 1e9;
+            printf("Time taken for Bookkeeping Process: %.9f seconds\n", time_spent);
+        }
+    } while (res != CURLE_OK && retry_count < max_retries);
+    curl_global_cleanup();
+    
     return NULL;
 }
 
@@ -309,9 +356,9 @@ int main(int argc, char **argv) {
     pthread_mutex_init(&lock, NULL); // Initialize the mutex
 
     char *interface = (argc > 1) ? argv[1] : "ens33";
-    char gocbRef[100] = "simpleIOGenericIO/LLN0$GO$gcbAnalogValues";
-    char datSet[100] = "simpleIOGenericIO/LLN0$AnalogValues";
-    char goID[100] = "simpleIOGenericIO/LLN0$GO$gcbAnalogValues";
+    char gocbRef[100] = "IPP/LLN0$GO$gcbAnalogValues";
+    char datSet[100] = "IPP/LLN0$AnalogValues";
+    char goID[100] = "IPP";
     
     log_info("Using interface %s", interface);
 
