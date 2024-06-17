@@ -22,9 +22,9 @@ static uint32_t stNum;
 static uint32_t sqNum = 0;
 static bool statusBool;
 
-char gocbRef[100] = "simpleIOGenericIO/LLN0$GO$gcbAnalogValues";
-char datSet[100] = "simpleIOGenericIO/LLN0$AnalogValues";
-char goID[100] = "simpleIOGenericIO/LLN0$GO$gcbAnalogValues";
+char gocbRef[100] = "X/LLN0$GO$gcbAnalogValues";
+char datSet[100] = "X/LLN0$AnalogValues";
+char goID[100] = "X";
 
 // Signal handler for graceful termination
 static void sigint_handler(int signalId) {
@@ -91,6 +91,7 @@ int main(int argc, char **argv) {
     GoosePublisher_setConfRev(publisher, 1);
     GoosePublisher_setDataSetRef(publisher, datSet);
     GoosePublisher_setTimeAllowedToLive(publisher, 5000);
+    GoosePublisher_setGoID(publisher, goID);
     GoosePublisher_setStNum(publisher, stNum);
     GoosePublisher_setSqNum(publisher, sqNum);
     publish(publisher);

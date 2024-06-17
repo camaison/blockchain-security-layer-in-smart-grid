@@ -1,4 +1,4 @@
-#define _POSIX_C_SOURCE 199309L  // Add this line at the top
+#define _POSIX_C_SOURCE 199309L  
 
 #include <stdint.h>
 #include <stdlib.h>
@@ -23,16 +23,18 @@ static int rdso_status = 1;
 static int update = 0;
 static uint32_t stNum = 0;
 static uint32_t sqNum = 0;
-static char published_timestamp_str[64]; // For the timestamp of the published message
-static char subscribed_timestamp_str[64]; // Global variable for the timestamp string of the subscribed message
+static char published_timestamp_str[64]; 
+static char subscribed_timestamp_str[64]; 
 static uint32_t subscribed_stNum = 0;
 static char subscribed_data[1024] = "FALSE";
 static bool statusBool = true;
 static char update_status[24] = "Standard";
 
-char gocbRef[100] = "simpleIOGenericIO/LLN0$GO$gcbAnalogValues";
-char datSet[100] = "simpleIOGenericIO/LLN0$AnalogValues";
-char goID[100] = "simpleIOGenericIO/LLN0$GO$gcbAnalogValues";
+char gocbRef[100] = "RDSO/LLN0$GO$gcbAnalogValues";
+char datSet[100] = "RDSO/LLN0$AnalogValues";
+char goID[100] = "RDSO";
+char goIDListenerIPP[100] = "IPP";
+char goIDListenerX[100] = "X";
 
 static pthread_mutex_t lock; // Mutex for thread-safe operations
 
@@ -84,7 +86,7 @@ void api_update(const char* timestamp, uint32_t stNum, const char* allData) {
             json_object_object_add(jobj, "messageContent", jmessageContent);
 
             const char *json_data = json_object_to_json_string(jobj);
-            curl_easy_setopt(curl, CURLOPT_URL, "http://192.168.37.139:3001/update");
+            curl_easy_setopt(curl, CURLOPT_URL, "http://192.168.37.139:3000/update");
             curl_easy_setopt(curl, CURLOPT_POSTFIELDS, json_data);
             curl_easy_setopt(curl, CURLOPT_TIMEOUT_MS, 5000L);  // Set a short timeout
 
@@ -192,20 +194,37 @@ int main(int argc, char **argv) {
         log_error("Failed to create GooseReceiver");
         return EXIT_FAILURE;
     }
-
+    
     GooseReceiver_setInterfaceId(receiver, interface);
-    GooseSubscriber subscriber = GooseSubscriber_create(goID, NULL);
-    if (subscriber == NULL) {
-        log_error("Failed to create GooseSubscriber");
+    GooseSubscriber subscriberIPP = GooseSubscriber_create(goIDListenerIPP, NULL);
+    GooseSubscriber subscriberX = GooseSubscriber_create(goIDListenerX, NULL);
+    
+    uint8_t dstMac[6] = {0x01, 0x0c, 0xcd, 0x01, 0x00, 0x01};
+
+    if (subscriberIPP == NULL) {
+        log_error("Failed to create GooseSubscriber IPP");
         GooseReceiver_destroy(receiver);
         return EXIT_FAILURE;
     }
+    else{
+    GooseSubscriber_setDstMac(subscriberIPP, dstMac);
+    GooseSubscriber_setAppId(subscriberIPP, 1000);
+    GooseSubscriber_setListener(subscriberIPP, gooseListener, NULL);
+    GooseReceiver_addSubscriber(receiver, subscriberIPP);
+    }
+    
+    if (subscriberX == NULL) {
+        log_error("Failed to create GooseSubscriber X");
+        GooseReceiver_destroy(receiver);
+        return EXIT_FAILURE;
+    }
+    else{
+    GooseSubscriber_setDstMac(subscriberX, dstMac);
+    GooseSubscriber_setAppId(subscriberX, 1000);
+    GooseSubscriber_setListener(subscriberX, gooseListener, NULL);
+    GooseReceiver_addSubscriber(receiver, subscriberX);
+    }
 
-    uint8_t dstMac[6] = {0x01, 0x0c, 0xcd, 0x01, 0x00, 0x01};
-    GooseSubscriber_setDstMac(subscriber, dstMac);
-    GooseSubscriber_setAppId(subscriber, 1000);
-    GooseSubscriber_setListener(subscriber, gooseListener, NULL);
-    GooseReceiver_addSubscriber(receiver, subscriber);
     GooseReceiver_start(receiver);
 
     CommParameters gooseCommParameters = {0};
@@ -216,7 +235,8 @@ int main(int argc, char **argv) {
         log_error("Failed to create GoosePublisher");
         GooseReceiver_stop(receiver);
         GooseReceiver_destroy(receiver);
-        GooseSubscriber_destroy(subscriber);
+        GooseSubscriber_destroy(subscriberIPP);
+        GooseSubscriber_destroy(subscriberX);
         return EXIT_FAILURE;
     }
 
@@ -224,6 +244,8 @@ int main(int argc, char **argv) {
     GoosePublisher_setConfRev(publisher, 1);
     GoosePublisher_setDataSetRef(publisher, datSet);
     GoosePublisher_setTimeAllowedToLive(publisher, 5000);
+    GoosePublisher_setGoID(publisher, goID);
+
 
     int toggleCounter = 0;
     while (running) {

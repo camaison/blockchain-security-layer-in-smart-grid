@@ -34,6 +34,12 @@ static char subscribed_data[1024] = "FALSE";
 static GoosePublisher global_publisher;
 static uint32_t previous_subscribed_stNum = 0; // The stnum before the status update to be validated. subscribed stnum is reverted to this if the action is invalid
 
+char gocbRef[100] = "IPP/LLN0$GO$gcbAnalogValues";
+char datSet[100] = "IPP/LLN0$AnalogValues";
+char goID[100] = "IPP";
+char goIDListenerRDSO[100] = "RDSO";
+char goIDListenerX[100] = "X";
+
 pthread_mutex_t lock; // Mutex for protecting shared variables
 
 // Signal handler for graceful termination
@@ -356,9 +362,6 @@ int main(int argc, char **argv) {
     pthread_mutex_init(&lock, NULL); // Initialize the mutex
 
     char *interface = (argc > 1) ? argv[1] : "ens33";
-    char gocbRef[100] = "IPP/LLN0$GO$gcbAnalogValues";
-    char datSet[100] = "IPP/LLN0$AnalogValues";
-    char goID[100] = "IPP";
     
     log_info("Using interface %s", interface);
 
@@ -369,18 +372,36 @@ int main(int argc, char **argv) {
     }
 
     GooseReceiver_setInterfaceId(receiver, interface);
-    GooseSubscriber subscriber = GooseSubscriber_create(goID, NULL);
-    if (subscriber == NULL) {
-        log_error("Failed to create GooseSubscriber");
+    GooseSubscriber subscriberRDSO = GooseSubscriber_create(goIDListenerRDSO, NULL);
+    GooseSubscriber subscriberX = GooseSubscriber_create(goIDListenerX, NULL);GooseSubscriber subscriber = GooseSubscriber_create(goID, NULL);
+
+    uint8_t dstMac[6] = {0x01, 0x0c, 0xcd, 0x01, 0x00, 0x01};
+    
+     if (subscriberRDSO == NULL) {
+        log_error("Failed to create GooseSubscriber RDSO");
         GooseReceiver_destroy(receiver);
         return EXIT_FAILURE;
     }
+    else{
+    GooseSubscriber_setDstMac(subscriberRDSO, dstMac);
+    GooseSubscriber_setAppId(subscriberRDSO, 1000);
+    GooseSubscriber_setListener(subscriberRDSO, gooseListener, NULL);
+    GooseReceiver_addSubscriber(receiver, subscriberRDSO);
+    }
+    
+    if (subscriberX == NULL) {
+        log_error("Failed to create GooseSubscriber X");
+        GooseReceiver_destroy(receiver);
+        return EXIT_FAILURE;
+    }
+    else{
+    GooseSubscriber_setDstMac(subscriberX, dstMac);
+    GooseSubscriber_setAppId(subscriberX, 1000);
+    GooseSubscriber_setListener(subscriberX, gooseListener, NULL);
+    GooseReceiver_addSubscriber(receiver, subscriberX);
+    }
 
-    uint8_t dstMac[6] = {0x01, 0x0c, 0xcd, 0x01, 0x00, 0x01};
-    GooseSubscriber_setDstMac(subscriber, dstMac);
-    GooseSubscriber_setAppId(subscriber, 1000);
-    GooseSubscriber_setListener(subscriber, gooseListener, NULL);
-    GooseReceiver_addSubscriber(receiver, subscriber);
+
     GooseReceiver_start(receiver);
 
     CommParameters gooseCommParameters = {0};
@@ -401,11 +422,10 @@ int main(int argc, char **argv) {
     GoosePublisher_setDataSetRef(publisher, datSet);
     GoosePublisher_setTimeAllowedToLive(publisher, 5000);
     GoosePublisher_setGoID(publisher, goID);
-    GoosePublisher_setSimulation(publisher, false);
-    GoosePublisher_setNeedsCommission(publisher, false);
+    // GoosePublisher_setSimulation(publisher, false);
+    // GoosePublisher_setNeedsCommission(publisher, false);
     GoosePublisher_setStNum(publisher, stNum);
     GoosePublisher_setSqNum(publisher, sqNum);
-    GoosePublisher_setConfRev(publisher, 1);
 
     while (running) {
         pthread_mutex_lock(&lock);
