@@ -173,7 +173,7 @@ func (s *SmartContract) GetHistory(ctx contractapi.TransactionContextInterface, 
 			return nil, fmt.Errorf("error reading model history: %v", err)
 		}
 
-		var tx map[string]interface{}
+		var tx interface{}
 		if err := json.Unmarshal(response.Value, &tx); err != nil {
 			return nil, fmt.Errorf("error unmarshaling transaction: %v", err)
 		}
