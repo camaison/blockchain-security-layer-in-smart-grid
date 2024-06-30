@@ -6,19 +6,7 @@ import (
 	"net/http"
 )
 
-// ReadData godoc
-// @Summary Read specific data from the ledger
-// @Description Retrieves specific data from the ledger by ID
-// @Tags data
-// @Accept json
-// @Produce json
-// @Param id query string true "ID of the Data to retrieve"
-// @Success 200 {object} interface{} "Data Retrieved"
-// @Failure 400 {string} string "Error occurred"
-// @Router /read [get]
-func (setup *OrgSetup) ReadData(w http.ResponseWriter, r *http.Request) {
-	fmt.Println("Received ReadData request")
-
+func (setup *OrgSetup) Read(w http.ResponseWriter, r *http.Request) {
 	// Extract 'id' from query parameters
 	id := r.URL.Query().Get("id")
 	if id == "" {
@@ -26,13 +14,15 @@ func (setup *OrgSetup) ReadData(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	fmt.Println("Received Read request for id:", id)
+
 	network := setup.Gateway.GetNetwork(setup.Channel)
 	contract := network.GetContract(setup.Chaincode)
 
-	// Evaluate transaction using the ReadData function from chaincode
-	result, err := contract.EvaluateTransaction("ReadData", id)
+	// Call the Read function from chaincode
+	result, err := contract.EvaluateTransaction("Read", id)
 	if err != nil {
-		fmt.Fprintf(w, "Error querying ReadData: %s", err)
+		fmt.Fprintf(w, "Error querying Read for %s: %s", id, err)
 		return
 	}
 
