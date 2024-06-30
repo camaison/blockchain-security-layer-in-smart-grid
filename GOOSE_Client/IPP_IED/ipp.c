@@ -43,6 +43,14 @@ char goIDListenerX[100] = "X/LLN0$GO$gcbAnalogValues";
 
 pthread_mutex_t lock; // Mutex for protecting shared variables
 
+typedef struct
+{
+    char published_timestamp_str[64];
+    uint32_t stNum;
+    bool statusBool;
+    char bookkeeping_status[64];
+} BookkeepingArgs;
+
 // Signal handler for graceful termination
 static void sigint_handler(int signalId)
 {
@@ -52,47 +60,6 @@ static void sigint_handler(int signalId)
 void log_error_with_retry(const char *message, int retry_count)
 {
     fprintf(stderr, "%s Retry count: %d\n", message, retry_count);
-}
-
-// Function to send a POST request with JSON data
-void api_validate(const char *url, const char *json_data)
-{
-    CURL *curl;
-    CURLcode res;
-    int retry_count = 0;
-    int max_retries = 3;
-
-    curl_global_init(CURL_GLOBAL_DEFAULT);
-    do
-    {
-        curl = curl_easy_init();
-        if (curl)
-        {
-            curl_easy_setopt(curl, CURLOPT_URL, url);
-            curl_easy_setopt(curl, CURLOPT_POSTFIELDS, json_data);
-
-            struct curl_slist *headers = NULL;
-            headers = curl_slist_append(headers, "Content-Type: application/json");
-            curl_easy_setopt(curl, CURLOPT_HTTPHEADER, headers);
-
-            res = curl_easy_perform(curl);
-            if (res != CURLE_OK)
-            {
-                log_error_with_retry("curl_easy_perform() failed", retry_count);
-                retry_count++;
-                Thread_sleep(2000 * retry_count); // Exponential backoff
-            }
-            else
-            {
-                retry_count = max_retries; // Exit the loop if successful
-            }
-
-            curl_slist_free_all(headers);
-            curl_easy_cleanup(curl);
-        }
-    } while (res != CURLE_OK && retry_count < max_retries);
-
-    curl_global_cleanup();
 }
 
 void formatUtcTime(char *buffer, size_t buffer_size, uint64_t epoch_ms)
@@ -108,7 +75,7 @@ void formatUtcTime(char *buffer, size_t buffer_size, uint64_t epoch_ms)
 }
 
 // Function to send a non-blocking POST request with JSON data
-void api_update(const char *timestamp, uint32_t stNum, const char *allData, const char *update_status)
+void bookkeeping_api(const char *timestamp, uint32_t stNum, const char *allData, const char *status)
 {
     CURL *curl;
     CURLcode res;
@@ -128,12 +95,12 @@ void api_update(const char *timestamp, uint32_t stNum, const char *allData, cons
             json_object_object_add(jmessageContent, "stNum", json_object_new_int(stNum));
             json_object_object_add(jmessageContent, "allData", json_object_new_string(allData));
 
-            json_object_object_add(jobj, "id", json_object_new_string("IPP_PubMessage"));
-            json_object_object_add(jobj, "messageType", json_object_new_string(update_status));
-            json_object_object_add(jobj, "messageContent", jmessageContent);
+            json_object_object_add(jobj, "id", json_object_new_string("IPP"));
+            json_object_object_add(jobj, "status", json_object_new_string(status));
+            json_object_object_add(jobj, "message", jmessageContent);
 
             const char *json_data = json_object_to_json_string(jobj);
-            curl_easy_setopt(curl, CURLOPT_URL, "http://192.168.37.139:3001/update");
+            curl_easy_setopt(curl, CURLOPT_URL, "http://192.168.37.139:3001/bookKeeping");
             curl_easy_setopt(curl, CURLOPT_POSTFIELDS, json_data);
             curl_easy_setopt(curl, CURLOPT_TIMEOUT_MS, 5000L);
 
@@ -162,6 +129,14 @@ void api_update(const char *timestamp, uint32_t stNum, const char *allData, cons
     curl_global_cleanup();
 }
 
+void *handle_bookkeeping(void *args)
+{
+    BookkeepingArgs *bkArgs = (BookkeepingArgs *)args;
+    bookkeeping_api(bkArgs->published_timestamp_str, bkArgs->stNum, bkArgs->statusBool ? "TRUE" : "FALSE", bkArgs->bookkeeping_status);
+    free(bkArgs); // Free the allocated memory for arguments
+    return NULL;
+}
+
 // Callback function to write response data
 size_t write_callback(void *ptr, size_t size, size_t nmemb, void *stream)
 {
@@ -176,27 +151,14 @@ size_t write_callback(void *ptr, size_t size, size_t nmemb, void *stream)
 
 void publish(GoosePublisher publisher);
 
-void *handle_update(void *arg)
+void *handle_validation(void *arg)
 {
-    char json_data[4024];
-    char query_data[4024];
     bool statusBool = (ipp_status == 1);
 
     struct timespec start, end;
 
-    // Thread_sleep(3000); // Sleep for 3 seconds
-
-    snprintf(query_data, sizeof(query_data),
-             "{\"messageID\": \"RDSO_PubMessage\", \"subscribedContent\": {\"t\": \"%s\", \"stNum\": %u, \"allData\": \"%s\"}}",
-             api_timestamp_str, subscribed_stNum, api_subscribed_data);
-
-    snprintf(json_data, sizeof(json_data),
-             "{\"id\": \"IPP_ValidationMessage\", \"subscribedContent\": {\"t\": \"%s\", \"stNum\": %u, \"allData\": \"%s\"}, \"publishedContent\": {\"t\": \"%s\", \"stNum\": %u, \"allData\": \"%s\"}}",
-             api_timestamp_str, subscribed_stNum, api_subscribed_data,
-             published_timestamp_str, stNum, statusBool ? "TRUE" : "FALSE");
-
     json_object *jobj = json_object_new_object();
-    json_object_object_add(jobj, "value", json_object_new_string(subscribed_goID));
+    json_object_object_add(jobj, "id", json_object_new_string(subscribed_goID));
     const char *json_data_id = json_object_to_json_string(jobj);
 
     CURL *curl;
@@ -213,10 +175,7 @@ void *handle_update(void *arg)
     {
         struct curl_slist *headers = NULL;
         headers = curl_slist_append(headers, "Content-Type: application/json");
-
-        // curl_easy_setopt(curl, CURLOPT_URL, "http://192.168.37.139:3000/validate");
-        // curl_easy_setopt(curl, CURLOPT_POSTFIELDS, query_data);
-        curl_easy_setopt(curl, CURLOPT_URL, "http://192.168.37.145:3001/idValidate");
+        curl_easy_setopt(curl, CURLOPT_URL, "http://192.168.37.139:3001/validate");
         curl_easy_setopt(curl, CURLOPT_POSTFIELDS, json_data_id);
         curl_easy_setopt(curl, CURLOPT_HTTPHEADER, headers);
 
@@ -246,16 +205,36 @@ void *handle_update(void *arg)
         // Calculate time difference
         double time_spent = (end.tv_sec - start.tv_sec) + (end.tv_nsec - start.tv_nsec) / 1e9;
         printf("Time taken for Validation: %.9f seconds\n\n", time_spent);
-        /*response:
-        {
-            "isValid": true
-        } */
 
         json_object *jobj = json_tokener_parse(response_buffer);
         json_object *jisValid = NULL;
         json_object_object_get_ex(jobj, "isValid", &jisValid);
         bool isValid = json_object_get_boolean(jisValid);
         json_object_put(jobj);
+
+        // STANDARD BOOKKEEPING BELOW
+        //  Allocate memory for the arguments
+        BookkeepingArgs *args = malloc(sizeof(BookkeepingArgs));
+        if (args == NULL)
+        {
+            perror("Failed to allocate memory for bookkeeping arguments");
+            exit(EXIT_FAILURE);
+        }
+
+        // Copy the values into the struct
+        strncpy(args->published_timestamp_str, published_timestamp_str, sizeof(args->published_timestamp_str));
+        args->stNum = stNum;
+        args->statusBool = statusBool;
+        strncpy(args->bookkeeping_status, isValid ? "Valid" : "Invalid", sizeof(args->bookkeeping_status));
+
+        // Create the thread
+        pthread_t bookkeeping_thread;
+        if (pthread_create(&bookkeeping_thread, NULL, handle_bookkeeping, (void *)args) != 0)
+        {
+            perror("Failed to create bookkeeping thread");
+            free(args); // Free the memory if thread creation fails
+        }
+        pthread_detach(bookkeeping_thread); // Automatically reclaim thread resources when done
 
         if (!isValid)
         {
@@ -272,71 +251,43 @@ void *handle_update(void *arg)
             pthread_mutex_unlock(&lock);
 
             publish(global_publisher);
+
+            // CORRECTIVE ACTION BOOKKEEPING BELOW
+
+            // Allocate memory for the arguments
+            BookkeepingArgs *corrective_args = malloc(sizeof(BookkeepingArgs));
+            if (corrective_args == NULL)
+            {
+                perror("Failed to allocate memory for corrective bookkeeping arguments");
+                exit(EXIT_FAILURE);
+            }
+
+            // Copy the values into the struct
+            strncpy(corrective_args->published_timestamp_str, published_timestamp_str, sizeof(corrective_args->published_timestamp_str));
+            corrective_args->stNum = stNum;
+            corrective_args->statusBool = statusBool;
+            strncpy(corrective_args->bookkeeping_status, "Valid", sizeof(corrective_args->bookkeeping_status));
+
+            // Create the thread
+            pthread_t corrective_bookkeeping_thread;
+            if (pthread_create(&corrective_bookkeeping_thread, NULL, handle_bookkeeping, (void *)corrective_args) != 0)
+            {
+                perror("Failed to create corrective bookkeeping thread");
+                free(corrective_args); // Free the memory if thread creation fails
+            }
+            pthread_detach(corrective_bookkeeping_thread); // Automatically reclaim thread resources when done
         }
     }
     while (res != CURLE_OK && retry_count < max_retries)
         ;
 
-    // Book Keeping Part of the Thread!!!
-    clock_gettime(CLOCK_REALTIME, &start);
-    curl_global_init(CURL_GLOBAL_DEFAULT);
-    do
-    {
-        curl = curl_easy_init();
-        if (curl)
-        {
-            struct curl_slist *headers = NULL;
-            headers = curl_slist_append(headers, "Content-Type: application/json");
-
-            curl_easy_setopt(curl, CURLOPT_URL, "http://192.168.37.139:3001/respond");
-            curl_easy_setopt(curl, CURLOPT_POSTFIELDS, json_data);
-            curl_easy_setopt(curl, CURLOPT_HTTPHEADER, headers);
-
-            char response_buffer[1024] = {0};
-            curl_easy_setopt(curl, CURLOPT_WRITEDATA, response_buffer);
-            curl_easy_setopt(curl, CURLOPT_WRITEFUNCTION, write_callback);
-
-            res = curl_easy_perform(curl);
-            if (res != CURLE_OK)
-            {
-                log_error_with_retry("curl_easy_perform() failed", retry_count);
-                retry_count++;
-                Thread_sleep(2000 * retry_count);
-            }
-            else
-            {
-                // printf("%s\n", response_buffer);
-                retry_count = max_retries;
-            }
-
-            curl_slist_free_all(headers);
-            curl_easy_cleanup(curl);
-
-            if (strcmp(response_buffer, "Result: Invalid") == 0)
-            {
-                api_update(published_timestamp_str, stNum, statusBool ? "TRUE" : "FALSE", "Corrective");
-            }
-
-            // Record end time
-            clock_gettime(CLOCK_REALTIME, &end);
-
-            // Calculate time difference
-            // double time_spent = (end.tv_sec - start.tv_sec) + (end.tv_nsec - start.tv_nsec) / 1e9;
-            // printf("Time taken for Bookkeeping Process: %.9f seconds\n", time_spent);
-        }
-    } while (res != CURLE_OK && retry_count < max_retries);
     curl_global_cleanup();
-
     return NULL;
 }
 
 // Listener for GOOSE messages
 void gooseListener(GooseSubscriber subscriber, void *parameter)
 {
-    uint8_t src[6], dst[6];
-    GooseSubscriber_getSrcMac(subscriber, src);
-    GooseSubscriber_getDstMac(subscriber, dst);
-
     formatUtcTime(subscribed_timestamp_str, sizeof(subscribed_timestamp_str), GooseSubscriber_getTimestamp(subscriber));
 
     if (subscribed_stNum < GooseSubscriber_getStNum(subscriber))
@@ -398,7 +349,7 @@ void publish(GoosePublisher publisher)
         global_publisher = publisher;
         update = 0;
         pthread_t update_thread;
-        pthread_create(&update_thread, NULL, handle_update, NULL);
+        pthread_create(&update_thread, NULL, handle_validation, NULL);
         pthread_detach(update_thread); // Automatically reclaim thread resources when done
     }
 
