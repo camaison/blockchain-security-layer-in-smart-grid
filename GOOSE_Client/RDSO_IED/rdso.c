@@ -1,4 +1,4 @@
-#define _POSIX_C_SOURCE 199309L  
+#define _POSIX_C_SOURCE 199309L
 
 #include <stdint.h>
 #include <stdlib.h>
@@ -23,12 +23,12 @@ static int rdso_status = 1;
 static int update = 0;
 static uint32_t stNum = 0;
 static uint32_t sqNum = 0;
-static char published_timestamp_str[64]; 
-static char subscribed_timestamp_str[64]; 
+static char published_timestamp_str[64];
+static char subscribed_timestamp_str[64];
 static uint32_t subscribed_stNum = 0;
 static char subscribed_data[1024] = "FALSE";
 static bool statusBool = true;
-static char update_status[24] = "Standard";
+static char bookkeeping_status[24] = "Valid";
 
 char gocbRef[100] = "RDSO/LLN0$GO$gcbAnalogValues";
 char datSet[100] = "RDSO/LLN0$AnalogValues";
@@ -39,17 +39,20 @@ char goIDListenerX[100] = "X/LLN0$GO$gcbAnalogValues";
 static pthread_mutex_t lock; // Mutex for thread-safe operations
 
 // Signal handler for graceful termination
-static void sigint_handler(int signalId) {
+static void sigint_handler(int signalId)
+{
     running = 0;
 }
 
-void log_error_with_retry(const char *message, int retry_count) {
+void log_error_with_retry(const char *message, int retry_count)
+{
     fprintf(stderr, "%s Retry count: %d\n", message, retry_count);
 }
 
-void formatUtcTime(char* buffer, size_t buffer_size, uint64_t epoch_ms) {
+void formatUtcTime(char *buffer, size_t buffer_size, uint64_t epoch_ms)
+{
     time_t rawtime = epoch_ms / 1000;
-    struct tm * ptm = gmtime(&rawtime);
+    struct tm *ptm = gmtime(&rawtime);
 
     strftime(buffer, buffer_size, "%b %d, %Y %H:%M:%S", ptm);
     // Add milliseconds manually since strftime doesn't support them
@@ -60,7 +63,8 @@ void formatUtcTime(char* buffer, size_t buffer_size, uint64_t epoch_ms) {
 }
 
 // Function to send a non-blocking POST request with JSON data
-void api_update(const char* timestamp, uint32_t stNum, const char* allData) {
+void bookkeeping_api(const char *timestamp, uint32_t stNum, const char *allData, const char *status)
+{
     CURL *curl;
     CURLcode res;
     int retry_count = 0;
@@ -71,9 +75,11 @@ void api_update(const char* timestamp, uint32_t stNum, const char* allData) {
     clock_gettime(CLOCK_REALTIME, &start);
 
     curl_global_init(CURL_GLOBAL_ALL);
-    do {
+    do
+    {
         curl = curl_easy_init();
-        if(curl) {
+        if (curl)
+        {
             json_object *jobj = json_object_new_object();
             json_object *jmessageContent = json_object_new_object();
 
@@ -81,25 +87,28 @@ void api_update(const char* timestamp, uint32_t stNum, const char* allData) {
             json_object_object_add(jmessageContent, "stNum", json_object_new_int(stNum));
             json_object_object_add(jmessageContent, "allData", json_object_new_string(allData));
 
-            json_object_object_add(jobj, "id", json_object_new_string("RDSO_PubMessage"));
-            json_object_object_add(jobj, "messageType", json_object_new_string(update_status));
-            json_object_object_add(jobj, "messageContent", jmessageContent);
+            json_object_object_add(jobj, "id", json_object_new_string("RDSO"));
+            json_object_object_add(jobj, "status", json_object_new_string(status));
+            json_object_object_add(jobj, "message", jmessageContent);
 
             const char *json_data = json_object_to_json_string(jobj);
-            curl_easy_setopt(curl, CURLOPT_URL, "http://192.168.37.139:3001/update");
+            curl_easy_setopt(curl, CURLOPT_URL, "http://192.168.37.139:3001/bookKeeping");
             curl_easy_setopt(curl, CURLOPT_POSTFIELDS, json_data);
-            curl_easy_setopt(curl, CURLOPT_TIMEOUT_MS, 5000L);  // Set a short timeout
+            curl_easy_setopt(curl, CURLOPT_TIMEOUT_MS, 5000L); // Set a short timeout
 
             struct curl_slist *headers = NULL;
             headers = curl_slist_append(headers, "Content-Type: application/json");
             curl_easy_setopt(curl, CURLOPT_HTTPHEADER, headers);
 
             res = curl_easy_perform(curl);
-            if (res != CURLE_OK) {
+            if (res != CURLE_OK)
+            {
                 log_error_with_retry("curl_easy_perform() failed", retry_count);
                 retry_count++;
                 Thread_sleep(2000 * retry_count); // Exponential backoff
-            } else {
+            }
+            else
+            {
                 retry_count = max_retries; // Exit the loop if successful
             }
 
@@ -116,16 +125,18 @@ void api_update(const char* timestamp, uint32_t stNum, const char* allData) {
 
     // Calculate time difference
     double time_spent = (end.tv_sec - start.tv_sec) + (end.tv_nsec - start.tv_nsec) / 1e9;
-    printf("Time taken for /update call: %.9f seconds\n", time_spent);
+    printf("Time taken for BookKeeping: %.9f seconds\n", time_spent);
 }
 
-void* handle_update(void* arg) {
-    api_update(published_timestamp_str, stNum, statusBool ? "TRUE" : "FALSE");
+void *handle_bookkeeping(void *arg)
+{
+    bookkeeping_api(published_timestamp_str, stNum, statusBool ? "TRUE" : "FALSE", bookkeeping_status);
     return NULL;
 }
 
 // Publish function
-void publish(GoosePublisher publisher) {
+void publish(GoosePublisher publisher)
+{
     LinkedList dataSetValues = LinkedList_create();
     statusBool = (rdso_status == 1); // True for CLOSED, False for OPEN
     LinkedList_add(dataSetValues, MmsValue_newBoolean(statusBool));
@@ -133,24 +144,27 @@ void publish(GoosePublisher publisher) {
     // Generate the current timestamp and set it for the publisher
     uint64_t currentTime = Hal_getTimeInMs();
     GoosePublisher_setTimestamp(publisher, currentTime);
-    
+
     formatUtcTime(published_timestamp_str, sizeof(published_timestamp_str), currentTime);
 
-    // if (update) {
-    //     update = 0;
-    //     pthread_t update_thread;
-    //     pthread_create(&update_thread, NULL, handle_update, NULL);
-    //     pthread_detach(update_thread); // Automatically reclaim thread resources when done
-    // }
-    
-    if (GoosePublisher_publish(publisher, dataSetValues) == -1) {
+    if (update)
+    {
+        update = 0;
+        pthread_t update_thread;
+        pthread_create(&update_thread, NULL, handle_bookkeeping, NULL);
+        pthread_detach(update_thread); // Automatically reclaim thread resources when done
+    }
+
+    if (GoosePublisher_publish(publisher, dataSetValues) == -1)
+    {
         log_error("Error sending GOOSE message");
     }
 
     LinkedList_destroyDeep(dataSetValues, (LinkedListValueDeleteFunction)MmsValue_delete);
 }
 
-void gooseListener(GooseSubscriber subscriber, void *parameter) {
+void gooseListener(GooseSubscriber subscriber, void *parameter)
+{
     uint8_t src[6], dst[6];
     GooseSubscriber_getSrcMac(subscriber, src);
     GooseSubscriber_getDstMac(subscriber, dst);
@@ -160,7 +174,8 @@ void gooseListener(GooseSubscriber subscriber, void *parameter) {
 
     formatUtcTime(subscribed_timestamp_str, sizeof(subscribed_timestamp_str), GooseSubscriber_getTimestamp(subscriber));
 
-    if (subscribed_stNum != GooseSubscriber_getStNum(subscriber)){
+    if (subscribed_stNum != GooseSubscriber_getStNum(subscriber))
+    {
         subscribed_stNum = GooseSubscriber_getStNum(subscriber);
     }
 
@@ -168,9 +183,12 @@ void gooseListener(GooseSubscriber subscriber, void *parameter) {
     MmsValue_printToBuffer(values, subscribed_data, sizeof(subscribed_data));
     // Update subscribed_data with a boolean value
     size_t length = strlen(subscribed_data);
-    if (length == 6) {
+    if (length == 6)
+    {
         strcpy(subscribed_data, "TRUE");
-    } else {
+    }
+    else
+    {
         strcpy(subscribed_data, "FALSE");
     }
 
@@ -184,46 +202,52 @@ void gooseListener(GooseSubscriber subscriber, void *parameter) {
            subscribed_data);
 }
 
-int main(int argc, char **argv) {
+int main(int argc, char **argv)
+{
     signal(SIGINT, sigint_handler);
     pthread_mutex_init(&lock, NULL); // Initialize the mutex
     char *interface = (argc > 1) ? argv[1] : "ens33";
     log_info("Using interface %s", interface);
 
     GooseReceiver receiver = GooseReceiver_create();
-    if (receiver == NULL) {
+    if (receiver == NULL)
+    {
         log_error("Failed to create GooseReceiver");
         return EXIT_FAILURE;
     }
-    
+
     GooseReceiver_setInterfaceId(receiver, interface);
     GooseSubscriber subscriberIPP = GooseSubscriber_create(goIDListenerIPP, NULL);
     GooseSubscriber subscriberX = GooseSubscriber_create(goIDListenerX, NULL);
-    
+
     uint8_t dstMac[6] = {0x01, 0x0c, 0xcd, 0x01, 0x00, 0x01};
 
-    if (subscriberIPP == NULL) {
+    if (subscriberIPP == NULL)
+    {
         log_error("Failed to create GooseSubscriber IPP");
         GooseReceiver_destroy(receiver);
         return EXIT_FAILURE;
     }
-    else{
-    GooseSubscriber_setDstMac(subscriberIPP, dstMac);
-    GooseSubscriber_setAppId(subscriberIPP, 1000);
-    GooseSubscriber_setListener(subscriberIPP, gooseListener, NULL);
-    GooseReceiver_addSubscriber(receiver, subscriberIPP);
+    else
+    {
+        GooseSubscriber_setDstMac(subscriberIPP, dstMac);
+        GooseSubscriber_setAppId(subscriberIPP, 1000);
+        GooseSubscriber_setListener(subscriberIPP, gooseListener, NULL);
+        GooseReceiver_addSubscriber(receiver, subscriberIPP);
     }
-    
-    if (subscriberX == NULL) {
+
+    if (subscriberX == NULL)
+    {
         log_error("Failed to create GooseSubscriber X");
         GooseReceiver_destroy(receiver);
         return EXIT_FAILURE;
     }
-    else{
-    GooseSubscriber_setDstMac(subscriberX, dstMac);
-    GooseSubscriber_setAppId(subscriberX, 1000);
-    GooseSubscriber_setListener(subscriberX, gooseListener, NULL);
-    GooseReceiver_addSubscriber(receiver, subscriberX);
+    else
+    {
+        GooseSubscriber_setDstMac(subscriberX, dstMac);
+        GooseSubscriber_setAppId(subscriberX, 1000);
+        GooseSubscriber_setListener(subscriberX, gooseListener, NULL);
+        GooseReceiver_addSubscriber(receiver, subscriberX);
     }
 
     GooseReceiver_start(receiver);
@@ -232,7 +256,8 @@ int main(int argc, char **argv) {
     gooseCommParameters.appId = 1000;
     memcpy(gooseCommParameters.dstAddress, dstMac, 6);
     GoosePublisher publisher = GoosePublisher_create(&gooseCommParameters, interface);
-    if (publisher == NULL) {
+    if (publisher == NULL)
+    {
         log_error("Failed to create GoosePublisher");
         GooseReceiver_stop(receiver);
         GooseReceiver_destroy(receiver);
@@ -247,20 +272,25 @@ int main(int argc, char **argv) {
     GoosePublisher_setTimeAllowedToLive(publisher, 5000);
     GoosePublisher_setGoID(publisher, goID);
 
-
     int toggleCounter = 0;
-    while (running) {
-        if (GooseReceiver_isRunning(receiver)) {
+    while (running)
+    {
+        if (GooseReceiver_isRunning(receiver))
+        {
             pthread_mutex_lock(&lock); // Lock the mutex
-            if (toggleCounter++ % 10 == 0) {
+            if (toggleCounter++ % 10 == 0)
+            {
                 int old_status = rdso_status;
                 rdso_status = !rdso_status;
-                if (old_status != rdso_status) {
+                if (old_status != rdso_status)
+                {
                     stNum++;
                     sqNum = 0;
                     update = 1;
                 }
-            } else {
+            }
+            else
+            {
                 sqNum++;
             }
             GoosePublisher_setStNum(publisher, stNum);
