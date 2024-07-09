@@ -81,6 +81,10 @@ void bookkeeping_api(const char *timestamp, uint32_t stNum, const char *allData,
     CURLcode res;
     int retry_count = 0;
     int max_retries = 3;
+    struct timespec start, end;
+
+    // Record start time
+    clock_gettime(CLOCK_REALTIME, &start);
 
     curl_global_init(CURL_GLOBAL_ALL);
     do
@@ -127,6 +131,12 @@ void bookkeeping_api(const char *timestamp, uint32_t stNum, const char *allData,
     } while (res != CURLE_OK && retry_count < max_retries);
 
     curl_global_cleanup();
+    // Record end time
+    clock_gettime(CLOCK_REALTIME, &end);
+
+    // Calculate time difference
+    double time_spent = (end.tv_sec - start.tv_sec) + (end.tv_nsec - start.tv_nsec) / 1e9;
+    printf("Time taken for BookKeeping: %.9f seconds\n", time_spent);
 }
 
 void *handle_bookkeeping(void *args)
@@ -221,7 +231,8 @@ void *handle_validation(void *arg)
             exit(EXIT_FAILURE);
         }
 
-        // Copy the values into the struct
+        // BOOOKKEEPING PROCESS BELOW
+        //  Copy the values into the struct
         strncpy(args->published_timestamp_str, published_timestamp_str, sizeof(args->published_timestamp_str));
         args->stNum = stNum;
         args->statusBool = statusBool;
@@ -236,6 +247,7 @@ void *handle_validation(void *arg)
         }
         pthread_detach(bookkeeping_thread); // Automatically reclaim thread resources when done
 
+        // CORRECTIVE ACTION BELOW
         if (!isValid)
         {
             pthread_mutex_lock(&lock);
