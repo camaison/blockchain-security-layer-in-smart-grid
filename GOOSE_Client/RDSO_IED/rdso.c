@@ -278,7 +278,7 @@ int main(int argc, char **argv)
         if (GooseReceiver_isRunning(receiver))
         {
             pthread_mutex_lock(&lock); // Lock the mutex
-            if (toggleCounter++ % 10 == 0)
+            if (toggleCounter++ % 5 == 0)
             {
                 int old_status = rdso_status;
                 rdso_status = !rdso_status;
