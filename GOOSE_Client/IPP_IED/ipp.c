@@ -34,6 +34,7 @@ static char subscribed_data[1024] = "FALSE";
 static GoosePublisher global_publisher;
 static uint32_t previous_subscribed_stNum = 0; // The stnum before the status update to be validated. subscribed stnum is reverted to this if the action is invalid
 static char subscribed_goID[100];              // Global variable for the timestamp string of the published message
+static struct timespec action_val_start, action_val_end;
 
 char gocbRef[100] = "IPP/LLN0$GO$gcbAnalogValues";
 char datSet[100] = "IPP/LLN0$AnalogValues";
@@ -165,7 +166,7 @@ void *handle_validation(void *arg)
 {
     bool statusBool = (ipp_status == 1);
 
-    struct timespec start, end;
+    struct timespec start, end, correction_start, correction_end;
 
     json_object *jobj = json_object_new_object();
     json_object_object_add(jobj, "id", json_object_new_string(subscribed_goID));
@@ -175,6 +176,11 @@ void *handle_validation(void *arg)
     CURLcode res;
     int retry_count = 0;
     int max_retries = 3;
+
+    clock_gettime(CLOCK_REALTIME, &action_val_end);
+    // Calculate time difference
+    double action_time = (action_val_end.tv_sec - action_val_start.tv_sec) + (action_val_end.tv_nsec - action_val_start.tv_nsec) / 1e9;
+    printf("Time taken From Action to Right Before Validation: %.9f seconds\n", action_time);
 
     // Record start time
     clock_gettime(CLOCK_REALTIME, &start);
@@ -211,10 +217,13 @@ void *handle_validation(void *arg)
 
         // Record end time
         clock_gettime(CLOCK_REALTIME, &end);
+        clock_gettime(CLOCK_REALTIME, &correction_start);
 
         // Calculate time difference
         double time_spent = (end.tv_sec - start.tv_sec) + (end.tv_nsec - start.tv_nsec) / 1e9;
         printf("Time taken for Validation: %.9f seconds\n\n", time_spent);
+        double projected_downtime_after_validation = action_time + time_spent;
+        printf("Projected Downtime: %.9f seconds\n\n", projected_downtime_after_validation);
 
         json_object *jobj = json_tokener_parse(response_buffer);
         json_object *jisValid = NULL;
@@ -263,7 +272,13 @@ void *handle_validation(void *arg)
             pthread_mutex_unlock(&lock);
 
             publish(global_publisher);
+            clock_gettime(CLOCK_REALTIME, &correction_end);
 
+            // Calculate time difference
+            double correction_time = (correction_end.tv_sec - correction_start.tv_sec) + (correction_end.tv_nsec - correction_start.tv_nsec) / 1e9;
+            printf("Time taken for Corrective Action: %.9f seconds\n\n", correction_time);
+            double actual_downtime = projected_downtime_after_validation + correction_time;
+            printf("Total Actual Downtime: %.9f seconds\n\n", actual_downtime);
             // CORRECTIVE ACTION BOOKKEEPING BELOW
 
             // Allocate memory for the arguments
@@ -304,6 +319,8 @@ void gooseListener(GooseSubscriber subscriber, void *parameter)
 
     if (subscribed_stNum < GooseSubscriber_getStNum(subscriber))
     {
+        // Record start time
+        clock_gettime(CLOCK_REALTIME, &action_val_start);
         memcpy(subscribed_goID, GooseSubscriber_getGoId(subscriber), 100);
         previous_subscribed_stNum = subscribed_stNum;
         subscribed_stNum = GooseSubscriber_getStNum(subscriber);
@@ -450,7 +467,7 @@ int main(int argc, char **argv)
         pthread_mutex_lock(&lock);
         publish(publisher);
         pthread_mutex_unlock(&lock);
-        Thread_sleep(5000);
+        Thread_sleep(1000);
     }
 
     GoosePublisher_destroy(publisher);
