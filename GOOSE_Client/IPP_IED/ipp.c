@@ -137,7 +137,7 @@ void bookkeeping_api(const char *timestamp, uint32_t stNum, const char *allData,
 
     // Calculate time difference
     double time_spent = (end.tv_sec - start.tv_sec) + (end.tv_nsec - start.tv_nsec) / 1e9;
-    printf("Time taken for BookKeeping: %.9f seconds\n", time_spent);
+    printf("Time taken for BookKeeping: %.9f seconds\n", time_spent); // In wireshark will be from when the bookkeeping request was sent to when the response was received
 }
 
 void *handle_bookkeeping(void *args)
@@ -180,7 +180,7 @@ void *handle_validation(void *arg)
     clock_gettime(CLOCK_REALTIME, &action_val_end);
     // Calculate time difference
     double action_time = (action_val_end.tv_sec - action_val_start.tv_sec) + (action_val_end.tv_nsec - action_val_start.tv_nsec) / 1e9;
-    printf("Time taken From Action to Right Before Validation: %.9f seconds\n", action_time);
+    printf("Time taken From Action to Right Before Validation: %.9f seconds\n", action_time); // In wireshark will be from when the response to rdso's goose message was published until right before the validation request was sent
 
     // Record start time
     clock_gettime(CLOCK_REALTIME, &start);
@@ -221,9 +221,9 @@ void *handle_validation(void *arg)
 
         // Calculate time difference
         double time_spent = (end.tv_sec - start.tv_sec) + (end.tv_nsec - start.tv_nsec) / 1e9;
-        printf("Time taken for Validation: %.9f seconds\n\n", time_spent);
+        printf("Time taken for Validation: %.9f seconds\n\n", time_spent); // In wireshark will be from when validation request was sent until when the response was received
         double projected_downtime_after_validation = action_time + time_spent;
-        printf("Projected Downtime: %.9f seconds\n\n", projected_downtime_after_validation);
+        printf("Projected Downtime: %.9f seconds\n\n", projected_downtime_after_validation); // In wireshark will be from when the response to rdso's goose message was publisjed(aka action was taken by ipp) until when the validation request was sent and then from when the validation request was sent until when the response was received
 
         json_object *jobj = json_tokener_parse(response_buffer);
         json_object *jisValid = NULL;
@@ -276,8 +276,8 @@ void *handle_validation(void *arg)
 
             // Calculate time difference
             double correction_time = (correction_end.tv_sec - correction_start.tv_sec) + (correction_end.tv_nsec - correction_start.tv_nsec) / 1e9;
-            printf("Time taken for Corrective Action: %.9f seconds\n\n", correction_time);
-            double actual_downtime = projected_downtime_after_validation + correction_time;
+            printf("Time taken for Corrective Action: %.9f seconds\n\n", correction_time);  // In Wireshark will map from after validation response was received until a new message was published
+            double actual_downtime = projected_downtime_after_validation + correction_time; // In wireshark will map from when the response was published to when the validation request was sent and then from when the validation request was sent until when the response was received until when a new message was published with the correction
             printf("Total Actual Downtime: %.9f seconds\n\n", actual_downtime);
             // CORRECTIVE ACTION BOOKKEEPING BELOW
 
