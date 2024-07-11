@@ -35,6 +35,9 @@ static GoosePublisher global_publisher;
 static uint32_t previous_subscribed_stNum = 0; // The stnum before the status update to be validated. subscribed stnum is reverted to this if the action is invalid
 static char subscribed_goID[100];              // Global variable for the timestamp string of the published message
 static struct timespec action_val_start, action_val_end;
+static double timeForBookKeeping = 0.0, timeForValidation = 0.0, timeFromActionToValidation = 0.0, timeForCorrectiveAction = 0.0, projectedDowntime = 0.0, totalActualDowntime = 0.0;
+static bool isCorrection = false;
+static bool isValid;
 
 char gocbRef[100] = "IPP/LLN0$GO$gcbAnalogValues";
 char datSet[100] = "IPP/LLN0$AnalogValues";
@@ -58,6 +61,45 @@ static void sigint_handler(int signalId)
     running = 0;
 }
 
+void send_data_to_server(double bookKeepingTime, double validationTime, double actionToValidationTime, double correctiveActionTime, double projectedDowntime, double totalDowntime)
+{
+    CURL *curl;
+    CURLcode res;
+
+    // Initialize a CURL session
+    curl = curl_easy_init();
+    if (curl)
+    {
+        struct curl_slist *headers = NULL;
+        headers = curl_slist_append(headers, "Content-Type: application/json");
+
+        // Create JSON object
+        json_object *jobj = json_object_new_object();
+        json_object_object_add(jobj, "bookKeepingTime", json_object_new_double(bookKeepingTime));
+        json_object_object_add(jobj, "validationTime", json_object_new_double(validationTime));
+        json_object_object_add(jobj, "actionToValidationTime", json_object_new_double(actionToValidationTime));
+        json_object_object_add(jobj, "correctiveActionTime", json_object_new_double(correctiveActionTime));
+        json_object_object_add(jobj, "projectedDowntime", json_object_new_double(projectedDowntime));
+        json_object_object_add(jobj, "totalDowntime", json_object_new_double(totalDowntime));
+
+        // Set CURL options
+        curl_easy_setopt(curl, CURLOPT_URL, "http://192.168.37.1:5000/data");
+        curl_easy_setopt(curl, CURLOPT_HTTPHEADER, headers);
+        curl_easy_setopt(curl, CURLOPT_POSTFIELDS, json_object_to_json_string(jobj));
+
+        // Perform the request
+        res = curl_easy_perform(curl);
+        if (res != CURLE_OK)
+        {
+            fprintf(stderr, "curl_easy_perform() failed: %s\n", curl_easy_strerror(res));
+        }
+
+        // Cleanup
+        curl_slist_free_all(headers);
+        curl_easy_cleanup(curl);
+        json_object_put(jobj);
+    }
+}
 void log_error_with_retry(const char *message, int retry_count)
 {
     fprintf(stderr, "%s Retry count: %d\n", message, retry_count);
@@ -105,7 +147,7 @@ void bookkeeping_api(const char *timestamp, uint32_t stNum, const char *allData,
             json_object_object_add(jobj, "message", jmessageContent);
 
             const char *json_data = json_object_to_json_string(jobj);
-            curl_easy_setopt(curl, CURLOPT_URL, "http://192.168.37.139:3001/bookKeeping");
+            curl_easy_setopt(curl, CURLOPT_URL, "http://192.168.37.145:3001/bookKeeping");
             curl_easy_setopt(curl, CURLOPT_POSTFIELDS, json_data);
             curl_easy_setopt(curl, CURLOPT_TIMEOUT_MS, 5000L);
 
@@ -138,6 +180,24 @@ void bookkeeping_api(const char *timestamp, uint32_t stNum, const char *allData,
     // Calculate time difference
     double time_spent = (end.tv_sec - start.tv_sec) + (end.tv_nsec - start.tv_nsec) / 1e9;
     printf("Time taken for BookKeeping: %.9f seconds\n", time_spent); // In wireshark will be from when the bookkeeping request was sent to when the response was received
+    if (isValid)
+    {
+        timeForBookKeeping = time_spent;
+
+        // Send the data
+        send_data_to_server(timeForBookKeeping, timeForValidation, timeFromActionToValidation,
+                            -1.0, projectedDowntime, -1.0);
+    }
+
+    if (!isValid && isCorrection)
+    {
+        isCorrection = !isCorrection;
+        timeForBookKeeping = time_spent;
+
+        // Send the data
+        send_data_to_server(timeForBookKeeping, timeForValidation, timeFromActionToValidation,
+                            timeForCorrectiveAction, projectedDowntime, totalActualDowntime);
+    }
 }
 
 void *handle_bookkeeping(void *args)
@@ -181,6 +241,7 @@ void *handle_validation(void *arg)
     // Calculate time difference
     double action_time = (action_val_end.tv_sec - action_val_start.tv_sec) + (action_val_end.tv_nsec - action_val_start.tv_nsec) / 1e9;
     printf("Time taken From Action to Right Before Validation: %.9f seconds\n", action_time); // In wireshark will be from when the response to rdso's goose message was published until right before the validation request was sent
+    timeFromActionToValidation = action_time;
 
     // Record start time
     clock_gettime(CLOCK_REALTIME, &start);
@@ -191,7 +252,7 @@ void *handle_validation(void *arg)
     {
         struct curl_slist *headers = NULL;
         headers = curl_slist_append(headers, "Content-Type: application/json");
-        curl_easy_setopt(curl, CURLOPT_URL, "http://192.168.37.139:3001/validate");
+        curl_easy_setopt(curl, CURLOPT_URL, "http://192.168.37.145:3001/validate");
         curl_easy_setopt(curl, CURLOPT_POSTFIELDS, json_data_id);
         curl_easy_setopt(curl, CURLOPT_HTTPHEADER, headers);
 
@@ -224,11 +285,15 @@ void *handle_validation(void *arg)
         printf("Time taken for Validation: %.9f seconds\n\n", time_spent); // In wireshark will be from when validation request was sent until when the response was received
         double projected_downtime_after_validation = action_time + time_spent;
         printf("Projected Downtime: %.9f seconds\n\n", projected_downtime_after_validation); // In wireshark will be from when the response to rdso's goose message was publisjed(aka action was taken by ipp) until when the validation request was sent and then from when the validation request was sent until when the response was received
+        projectedDowntime = projected_downtime_after_validation;
+        timeForValidation = time_spent;
+        totalActualDowntime = -1;
+        timeForCorrectiveAction = -1;
 
         json_object *jobj = json_tokener_parse(response_buffer);
         json_object *jisValid = NULL;
         json_object_object_get_ex(jobj, "isValid", &jisValid);
-        bool isValid = json_object_get_boolean(jisValid);
+        isValid = json_object_get_boolean(jisValid);
         json_object_put(jobj);
 
         // STANDARD BOOKKEEPING BELOW
@@ -269,6 +334,8 @@ void *handle_validation(void *arg)
 
             subscribed_stNum = previous_subscribed_stNum;
 
+            isCorrection = true;
+
             pthread_mutex_unlock(&lock);
 
             publish(global_publisher);
@@ -279,6 +346,9 @@ void *handle_validation(void *arg)
             printf("Time taken for Corrective Action: %.9f seconds\n\n", correction_time);  // In Wireshark will map from after validation response was received until a new message was published
             double actual_downtime = projected_downtime_after_validation + correction_time; // In wireshark will map from when the response was published to when the validation request was sent and then from when the validation request was sent until when the response was received until when a new message was published with the correction
             printf("Total Actual Downtime: %.9f seconds\n\n", actual_downtime);
+            totalActualDowntime = actual_downtime;
+            timeForCorrectiveAction = correction_time;
+
             // CORRECTIVE ACTION BOOKKEEPING BELOW
 
             // Allocate memory for the arguments

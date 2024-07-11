@@ -1,0 +1,1 @@
+In the data.csv, i replaced all cases where the action taken was valid and thus there was no actual downtime value or correction time value with a 0
