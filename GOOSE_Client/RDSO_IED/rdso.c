@@ -273,8 +273,14 @@ int main(int argc, char **argv)
     GoosePublisher_setGoID(publisher, goID);
 
     int toggleCounter = 0;
-    while (running)
+    int count = 0;
+    while (count <= 10)
     {
+        if (count == 5)
+        {
+            count++;
+            Thread_sleep(26000); // Sleep for 25 seconds
+        }
         if (GooseReceiver_isRunning(receiver))
         {
             pthread_mutex_lock(&lock); // Lock the mutex
@@ -287,6 +293,7 @@ int main(int argc, char **argv)
                     stNum++;
                     sqNum = 0;
                     update = 1;
+                    count++;
                 }
             }
             else

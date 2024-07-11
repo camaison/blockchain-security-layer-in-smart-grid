@@ -27,13 +27,15 @@ char datSet[100] = "X/LLN0$AnalogValues";
 char goID[100] = "X";
 
 // Signal handler for graceful termination
-static void sigint_handler(int signalId) {
+static void sigint_handler(int signalId)
+{
     running = 0;
 }
 
-void formatUtcTime(char* buffer, size_t buffer_size, uint64_t epoch_ms) {
+void formatUtcTime(char *buffer, size_t buffer_size, uint64_t epoch_ms)
+{
     time_t rawtime = epoch_ms / 1000;
-    struct tm * ptm = gmtime(&rawtime);
+    struct tm *ptm = gmtime(&rawtime);
 
     strftime(buffer, buffer_size, "%b %d, %Y %H:%M:%S", ptm);
     // Add milliseconds manually since strftime doesn't support them
@@ -44,7 +46,8 @@ void formatUtcTime(char* buffer, size_t buffer_size, uint64_t epoch_ms) {
 }
 
 // Publish function
-void publish(GoosePublisher publisher) {
+void publish(GoosePublisher publisher)
+{
     char published_timestamp_str[1024];
     LinkedList dataSetValues = LinkedList_create();
     statusBool = (rdso_status == 1); // True for CLOSED, False for OPEN
@@ -56,7 +59,8 @@ void publish(GoosePublisher publisher) {
 
     formatUtcTime(published_timestamp_str, sizeof(published_timestamp_str), currentTime);
 
-    if (GoosePublisher_publish(publisher, dataSetValues) == -1) {
+    if (GoosePublisher_publish(publisher, dataSetValues) == -1)
+    {
         log_error("Error sending GOOSE message");
     }
 
@@ -66,7 +70,8 @@ void publish(GoosePublisher publisher) {
     LinkedList_destroyDeep(dataSetValues, (LinkedListValueDeleteFunction)MmsValue_delete);
 }
 
-int main(int argc, char **argv) {
+int main(int argc, char **argv)
+{
     signal(SIGINT, sigint_handler);
 
     char *interface = (argc > 1) ? argv[1] : "ens33";
@@ -82,7 +87,8 @@ int main(int argc, char **argv) {
     memcpy(gooseCommParameters.dstAddress, dstMac, 6);
     GoosePublisher publisher = GoosePublisher_create(&gooseCommParameters, interface);
 
-    if (publisher == NULL) {
+    if (publisher == NULL)
+    {
         log_error("Failed to create GoosePublisher");
         return EXIT_FAILURE;
     }
@@ -94,11 +100,21 @@ int main(int argc, char **argv) {
     GoosePublisher_setGoID(publisher, goID);
     GoosePublisher_setStNum(publisher, stNum);
     GoosePublisher_setSqNum(publisher, sqNum);
-    publish(publisher);
+    Thread_sleep(26000); // Sleep for 6 seconds
 
+    int count = 0;
+    while (count < 10)
+    {
+        if (count == 5)
+        {
+            Thread_sleep(26000); // Sleep for 6 seconds
+        }
+        publish(publisher);
+        count++;
+        Thread_sleep(5000); // Sleep for 1 second
+    }
     GoosePublisher_destroy(publisher);
 
     log_info("Application terminated gracefully");
-
     return 0;
 }
