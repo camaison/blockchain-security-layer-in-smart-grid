@@ -92,7 +92,7 @@ void bookkeeping_api(const char *timestamp, uint32_t stNum, const char *allData,
             json_object_object_add(jobj, "message", jmessageContent);
 
             const char *json_data = json_object_to_json_string(jobj);
-            curl_easy_setopt(curl, CURLOPT_URL, "http://192.168.37.139:3001/bookKeeping");
+            curl_easy_setopt(curl, CURLOPT_URL, "http://192.168.1.101:3001/bookKeeping");
             curl_easy_setopt(curl, CURLOPT_POSTFIELDS, json_data);
             curl_easy_setopt(curl, CURLOPT_TIMEOUT_MS, 5000L); // Set a short timeout
 
@@ -206,7 +206,7 @@ int main(int argc, char **argv)
 {
     signal(SIGINT, sigint_handler);
     pthread_mutex_init(&lock, NULL); // Initialize the mutex
-    char *interface = (argc > 1) ? argv[1] : "ens38";
+    char *interface = (argc > 1) ? argv[1] : "ens33";
     log_info("Using interface %s", interface);
 
     GooseReceiver receiver = GooseReceiver_create();

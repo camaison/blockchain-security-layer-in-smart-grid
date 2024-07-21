@@ -147,7 +147,7 @@ void bookkeeping_api(const char *timestamp, uint32_t stNum, const char *allData,
             json_object_object_add(jobj, "message", jmessageContent);
 
             const char *json_data = json_object_to_json_string(jobj);
-            curl_easy_setopt(curl, CURLOPT_URL, "http://192.168.37.145:3001/bookKeeping");
+            curl_easy_setopt(curl, CURLOPT_URL, "http://192.168.1.100:3001/bookKeeping");
             curl_easy_setopt(curl, CURLOPT_POSTFIELDS, json_data);
             curl_easy_setopt(curl, CURLOPT_TIMEOUT_MS, 5000L);
 
@@ -252,7 +252,7 @@ void *handle_validation(void *arg)
     {
         struct curl_slist *headers = NULL;
         headers = curl_slist_append(headers, "Content-Type: application/json");
-        curl_easy_setopt(curl, CURLOPT_URL, "http://192.168.37.145:3001/validate");
+        curl_easy_setopt(curl, CURLOPT_URL, "http://192.168.1.100:3001/validate");
         curl_easy_setopt(curl, CURLOPT_POSTFIELDS, json_data_id);
         curl_easy_setopt(curl, CURLOPT_HTTPHEADER, headers);
 
@@ -460,7 +460,7 @@ int main(int argc, char **argv)
     signal(SIGINT, sigint_handler);
     pthread_mutex_init(&lock, NULL); // Initialize the mutex
 
-    char *interface = (argc > 1) ? argv[1] : "ens38";
+    char *interface = (argc > 1) ? argv[1] : "ens33";
 
     log_info("Using interface %s", interface);
 
