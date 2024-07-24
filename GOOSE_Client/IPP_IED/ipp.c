@@ -537,7 +537,7 @@ int main(int argc, char **argv)
         pthread_mutex_lock(&lock);
         publish(publisher);
         pthread_mutex_unlock(&lock);
-        Thread_sleep(1000);
+        Thread_sleep(500);
     }
 
     GoosePublisher_destroy(publisher);
