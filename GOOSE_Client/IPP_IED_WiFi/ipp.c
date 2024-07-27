@@ -184,20 +184,20 @@ void bookkeeping_api(const char *timestamp, uint32_t stNum, const char *allData,
     {
         timeForBookKeeping = time_spent;
 
-        // Send the data
-        send_data_to_server(timeForBookKeeping, timeForValidation, timeFromActionToValidation,
-                            -1.0, projectedDowntime, -1.0);
+        // // Send the data
+        // send_data_to_server(timeForBookKeeping, timeForValidation, timeFromActionToValidation,
+        //                     -1.0, projectedDowntime, -1.0);
     }
 
-    if (!isValid && isCorrection)
-    {
-        isCorrection = !isCorrection;
-        timeForBookKeeping = time_spent;
+    // if (!isValid && isCorrection)
+    // {
+    //     isCorrection = !isCorrection;
+    //     timeForBookKeeping = time_spent;
 
-        // Send the data
-        send_data_to_server(timeForBookKeeping, timeForValidation, timeFromActionToValidation,
-                            timeForCorrectiveAction, projectedDowntime, totalActualDowntime);
-    }
+    //     // Send the data
+    //     send_data_to_server(timeForBookKeeping, timeForValidation, timeFromActionToValidation,
+    //                         timeForCorrectiveAction, projectedDowntime, totalActualDowntime);
+    // }
 }
 
 void *handle_bookkeeping(void *args)
@@ -537,7 +537,7 @@ int main(int argc, char **argv)
         pthread_mutex_lock(&lock);
         publish(publisher);
         pthread_mutex_unlock(&lock);
-        Thread_sleep(500);
+        Thread_sleep(10);
     }
 
     GoosePublisher_destroy(publisher);
