@@ -100,18 +100,13 @@ int main(int argc, char **argv)
     GoosePublisher_setGoID(publisher, goID);
     GoosePublisher_setStNum(publisher, stNum);
     GoosePublisher_setSqNum(publisher, sqNum);
-    Thread_sleep(26000); // Sleep for 6 seconds
 
     int count = 0;
-    while (count < 10)
+    while (count < 100)
     {
-        if (count == 5)
-        {
-            Thread_sleep(26000); // Sleep for 6 seconds
-        }
         publish(publisher);
         count++;
-        Thread_sleep(5000); // Sleep for 1 second
+        Thread_sleep(6000); // Sleep for 6 seconds
     }
     GoosePublisher_destroy(publisher);
 
