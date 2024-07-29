@@ -20,7 +20,7 @@ services:
     extends:
       file: base/docker-compose-base.yaml
       service: orderer.example.com
-    container_name: orderer.example.com
+    container_name: orderer0.rdso.com
     networks:
       - byfn
 
@@ -30,7 +30,7 @@ services:
       service: orderer-base
     environment:
       - ORDERER_GENERAL_LISTENPORT=11050
-    container_name: orderer5.example.com
+    container_name: orderer1.rdso.com
     networks:
       - byfn
     volumes:
@@ -42,7 +42,7 @@ services:
       - 11050:11050
 
   peer0.org1.example.com:
-    container_name: peer0.org1.example.com
+    container_name: peer0.rdso.com
     extends:
       file: base/docker-compose-base.yaml
       service: peer0.org1.example.com

@@ -21,7 +21,7 @@ services:
       service: orderer-base
     environment:
       - ORDERER_GENERAL_LISTENPORT=9050
-    container_name: orderer3.example.com
+    container_name: orderer0.ipp.com
     networks:
       - byfn
     volumes:
@@ -33,7 +33,7 @@ services:
       - 9050:9050
 
   peer0.org2.example.com:
-    container_name: peer0.org2.example.com
+    container_name: peer0.ipp.com
     extends:
       file: base/docker-compose-base.yaml
       service: peer0.org2.example.com
